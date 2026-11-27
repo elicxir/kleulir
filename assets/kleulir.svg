@@ -1,5 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#212121"/>
-  <rect x="10" y="12" width="8" height="40" fill="#38b48b"/>
-  <path d="M26 12 L54 32 L26 52 Z" fill="#ededed"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 100 100">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3f47"/><stop offset="1" stop-color="#202328"/></linearGradient></defs>
+  <rect x="2" y="2" width="96" height="96" rx="22" fill="url(#bg)"/>
+  <g transform="translate(50 50) scale(1.25) translate(-51 -36.5)"><g transform="translate(100 0) scale(-1 1)"><g transform="translate(2 6)">
+    <ellipse cx="44" cy="48.5" rx="20" ry="3.6" fill="#0c0d0f" stroke="#737a87" stroke-width="0.7"/>
+    <ellipse cx="44" cy="48.5" rx="6" ry="1.2" fill="#e0a50c"/>
+    <rect x="20" y="51" width="54" height="11" rx="2" fill="#a8672e"/>
+    <rect x="20" y="55.5" width="54" height="1.2" fill="#6b3f18" opacity=".7"/>
+    <rect x="60.5" y="48" width="11" height="3.6" rx="1" fill="#a87708"/>
+    <g transform="translate(66 50) scale(1.1) translate(-66 -50)">
+      <path d="M40.5 4 C43 20 52 28 62 31 C66 32.5 69 36 69 42 V52 H63 V43 C63 40 61 38 58 37.5 C50 35 40 32 27.5 40Z" fill="#f0b90f" stroke="#5a3d06" stroke-width="0.45" stroke-linejoin="round"/>
+      <ellipse cx="34" cy="22" rx="7" ry="19" transform="rotate(20 34 22)" fill="#ffdc5c" stroke="#5a3d06" stroke-width="0.45"/>
+      <ellipse cx="35.2" cy="22.4" rx="4.4" ry="15" transform="rotate(20 35.2 22.4)" fill="#6b4a04"/>
+    </g>
+  </g></g></g>
 </svg>
