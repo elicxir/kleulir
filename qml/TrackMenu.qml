@@ -72,13 +72,6 @@ PopupMenu {
         onTriggered: Nav.go({ page: "versions", song: root.tracks[0] })
     }
     PopupMenuItem {
-        // The song's composition, work and their other songs, or the songs that sound alike.
-        visible: Session.serverFeatures.indexOf("graph") >= 0 && root.picked === 1
-        text: "Show related graph"
-        onTriggered: Nav.go({ page: "graph", seed: "song:" + root.tracks[0].id, label: root.tracks[0].title,
-                              mode: "related" })
-    }
-    PopupMenuItem {
         visible: root.showGoToAlbum && root.picked === 1 && !!root.tracks[0].albumId
         text: "Go to album"
         onTriggered: Nav.openAlbumId(root.tracks[0].albumId, root.tracks[0].album)

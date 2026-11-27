@@ -83,7 +83,6 @@ qt_add_qml_module(kleulir
     qml/WorkPage.qml
     qml/CompositionsPage.qml
     qml/CompositionPage.qml
-    qml/GraphPage.qml
 )
 
 target_include_directories(kleulir PRIVATE src)
