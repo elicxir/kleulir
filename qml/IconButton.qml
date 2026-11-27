@@ -8,6 +8,8 @@ AbstractButton {
     property string glyph: ""
     property string tip: ""
     property bool active: false
+    // Draws a small accent mark under the icon: a toggle that is switched on.
+    property bool marked: false
     property int glyphSize: 18
     property int labelSize: Theme.fontBody
 
@@ -26,6 +28,15 @@ AbstractButton {
     }
 
     contentItem: Item {
+        Rectangle {
+            visible: root.marked
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 2
+            width: 4
+            height: 4
+            color: Theme.accent
+        }
         Icon {
             anchors.centerIn: parent
             visible: root.glyph.length > 0

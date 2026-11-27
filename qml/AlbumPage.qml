@@ -11,9 +11,15 @@ Item {
     // full album once it has loaded.
     property var album
     property string loadError: ""
-    signal back()
 
     readonly property var tracks: album && album.tracks ? album.tracks : []
+    readonly property int totalSeconds: tracks.reduce((s, t) => s + t.duration, 0)
+    readonly property real hue: Theme.coverHue(album ? album.title : "")
+    readonly property bool starred: {
+        Library.starRevision
+        return album ? Library.isStarred(album.id) : false
+    }
+
     property string requested: ""
     function request() {
         if (album && !album.tracks && requested !== album.id) {
@@ -21,10 +27,13 @@ Item {
             Library.loadAlbum(album.id)
         }
     }
+    onAlbumChanged: request()
+    Component.onCompleted: request()
+
     Connections {
         target: Library
         function onAlbumLoaded(id, loaded) {
-            if (root.album && id === root.album.id)
+            if (root.album && id === root.album.id && !root.album.tracks)
                 root.album = loaded
         }
         function onAlbumFailed(id, message) {
@@ -32,23 +41,6 @@ Item {
                 root.loadError = message
         }
     }
-
-    function reload() {
-        trackModel.clear()
-        request()
-        // Read album.tracks directly: the `tracks` binding may not have updated yet
-        // when this runs from onAlbumChanged.
-        const list = album && album.tracks ? album.tracks : []
-        list.forEach(t => trackModel.append({
-                trackId: t.id, title: t.title, artist: t.artist,
-                duration: t.duration, work: t.work, estimated: t.estimated
-        }))
-    }
-    onAlbumChanged: reload()
-    Component.onCompleted: reload()
-
-    readonly property int totalSeconds: tracks.reduce((s, t) => s + t.duration, 0)
-    readonly property real hue: Theme.coverHue(album ? album.title : "")
 
     // Wash of the cover's colour behind the header, fading into the panel.
     Rectangle {
@@ -60,29 +52,19 @@ Item {
         }
     }
 
-    ListView {
+    TrackList {
         id: list
         anchors.fill: parent
         anchors.leftMargin: 24
         anchors.rightMargin: 12
-        clip: true
-        // A ListModel rather than the JS array: ListView sections need named roles.
-        model: ListModel { id: trackModel }
-        bottomMargin: Theme.pad
-
-        ScrollBar.vertical: ScrollBar {}
+        tracks: root.tracks
+        album: root.album
+        groupByWork: true
 
         header: Column {
-            width: list.width - 12
-            topPadding: 14
+            width: list.width - list.sideMargin
+            topPadding: 28
             bottomPadding: 12
-            spacing: 14
-
-            IconButton {
-                glyph: "back"
-                tip: "Back to albums"
-                onClicked: root.back()
-            }
 
             RowLayout {
                 width: parent.width
@@ -138,8 +120,8 @@ Item {
                             implicitHeight: 36
                             implicitWidth: playRow.implicitWidth + 32
                             hoverEnabled: true
-                            Accessible.name: "Play"
                             enabled: root.tracks.length > 0
+                            Accessible.name: "Play"
                             onClicked: Player.playAlbum(root.album, 0)
                             background: Rectangle {
                                 color: playButton.down ? Theme.textDim
@@ -172,7 +154,7 @@ Item {
                             implicitWidth: enqueueLabel.implicitWidth + 32
                             hoverEnabled: true
                             enabled: root.tracks.length > 0
-                            onClicked: root.tracks.forEach(t => Player.enqueue(t, root.album))
+                            onClicked: Player.enqueueMany(root.tracks, root.album)
                             background: Rectangle {
                                 color: enqueueButton.hovered ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
                                 border.color: Qt.rgba(1, 1, 1, 0.28)
@@ -186,135 +168,16 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                             }
                         }
+                        IconButton {
+                            implicitWidth: 36
+                            implicitHeight: 36
+                            glyph: root.starred ? "heart" : "heartOutline"
+                            glyphSize: 20
+                            active: root.starred
+                            tip: root.starred ? "Remove from Starred" : "Add to Starred"
+                            onClicked: Library.setStarred([root.album.id], !root.starred)
+                        }
                     }
-                }
-            }
-        }
-
-        section.property: "work"
-        section.delegate: Item {
-            required property string section
-            width: list.width - 12
-            height: 44
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: Theme.gap
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
-                text: parent.section.length > 0 ? parent.section : "No work"
-                color: parent.section.length > 0 ? Theme.text : Theme.textFaint
-                font.pixelSize: Theme.fontSmall
-                font.weight: Font.DemiBold
-                font.letterSpacing: 0.4
-            }
-            Rectangle {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: 1
-                color: Qt.rgba(1, 1, 1, 0.06)
-            }
-        }
-
-        delegate: Rectangle {
-            id: row
-            required property int index
-            required property string trackId
-            required property string title
-            required property string artist
-            required property real duration
-            required property bool estimated
-            readonly property var track: index < root.tracks.length ? root.tracks[index] : null
-            readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
-            readonly property bool hot: rowArea.containsMouse || nextButton.hovered || addButton.hovered
-
-            width: list.width - 12
-            height: 38
-            color: row.hot ? Qt.rgba(1, 1, 1, 0.06) : row.isCurrent ? Qt.rgba(1, 1, 1, 0.03) : "transparent"
-
-            MouseArea {
-                id: rowArea
-                anchors.fill: parent
-                hoverEnabled: true
-                onDoubleClicked: Player.playAlbum(root.album, row.index)
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Theme.gap
-                anchors.rightMargin: 12
-                spacing: 10
-
-                Item {
-                    Layout.preferredWidth: 24
-                    Layout.fillHeight: true
-                    Text {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: !row.isCurrent
-                        text: row.index + 1
-                        color: Theme.textFaint
-                        font.pixelSize: Theme.fontBody
-                        font.features: { "tnum": 1 }
-                    }
-                    Icon {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: row.isCurrent
-                        name: Player.playing ? "play" : "pause"
-                        size: 14
-                        color: Theme.accent
-                    }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: row.title
-                    color: row.isCurrent ? Theme.accent : Theme.text
-                    font.pixelSize: 14
-                    elide: Text.ElideRight
-                }
-                Rectangle {
-                    visible: row.estimated
-                    implicitWidth: estimatedLabel.implicitWidth + 12
-                    implicitHeight: 18
-                    color: "transparent"
-                    border.color: Qt.rgba(Theme.estimated.r, Theme.estimated.g, Theme.estimated.b, 0.6)
-                    Text {
-                        id: estimatedLabel
-                        anchors.centerIn: parent
-                        text: "EST"
-                        color: Theme.estimated
-                        font.pixelSize: 10
-                        font.weight: Font.DemiBold
-                    }
-                }
-                Text {
-                    Layout.preferredWidth: 150
-                    text: row.artist
-                    color: Theme.textDim
-                    font.pixelSize: Theme.fontBody
-                    elide: Text.ElideRight
-                }
-                IconButton {
-                    id: nextButton
-                    opacity: row.hot ? 1 : 0
-                    glyph: "playNext"
-                    tip: "Play next"
-                    onClicked: Player.playNext(row.track, root.album)
-                }
-                IconButton {
-                    id: addButton
-                    opacity: row.hot ? 1 : 0
-                    glyph: "add"
-                    tip: "Add to queue"
-                    onClicked: Player.enqueue(row.track, root.album)
-                }
-                Text {
-                    Layout.preferredWidth: 40
-                    text: Theme.time(row.duration)
-                    color: Theme.textDim
-                    font.pixelSize: Theme.fontBody
-                    font.features: { "tnum": 1 }
-                    horizontalAlignment: Text.AlignRight
                 }
             }
         }

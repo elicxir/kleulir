@@ -6,61 +6,98 @@ import Kleulir
 Rectangle {
     id: root
     color: Theme.bg
-    property string currentKey: "albums"
-    signal navigate(string key)
 
-    // `eos: true` entries need /ext and are hidden on a plain OpenSubsonic server.
+    // The page that is open; an album belongs under Albums.
+    readonly property string currentKey: Nav.current.page === "album" ? "albums" : Nav.current.page
+
+    // Only pages that exist. Artists, Genres, Folders, Works, Starred, Playlists
+    // and Suggestions come back as they are built.
     readonly property var entries: [
         { section: "LIBRARY" },
-        { key: "albums", label: "Albums" },
-        { key: "artists", label: "Artists" },
-        { key: "genres", label: "Genres" },
-        { key: "folders", label: "Folders", eos: true },
-        { key: "works", label: "Works", eos: true },
-        { section: "YOU" },
-        { key: "starred", label: "Starred" },
-        { key: "playlists", label: "Playlists" },
-        { section: "MANAGE", eos: true },
-        { key: "suggestions", label: "Suggestions", eos: true }
+        { key: "albums", label: "Albums" }
     ]
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.gap
-        anchors.topMargin: Theme.gap
         spacing: 2
 
-        Button {
-            id: searchButton
+        // History, like a browser's back and forward.
+        RowLayout {
+            spacing: 2
+            Layout.bottomMargin: 4
+            IconButton {
+                glyph: "back"
+                tip: "Back  (Alt+Left)"
+                enabled: Nav.canBack
+                onClicked: Nav.back()
+            }
+            IconButton {
+                glyph: "forward"
+                tip: "Forward  (Alt+Right)"
+                enabled: Nav.canForward
+                onClicked: Nav.forward()
+            }
+        }
+
+        // Search as you type.
+        TextField {
+            id: search
             Layout.fillWidth: true
             Layout.bottomMargin: 6
             implicitHeight: 34
-            hoverEnabled: true
-            onClicked: root.navigate("search")
-            background: Rectangle {
-                color: searchButton.hovered ? Theme.hover : Theme.raised
-                border.color: root.currentKey === "search" ? Theme.accentDim : Theme.line
+            leftPadding: 34
+            rightPadding: clear.visible ? 30 : 8
+            placeholderText: "Search"
+            placeholderTextColor: Theme.textFaint
+            color: Theme.text
+            font.pixelSize: Theme.fontBody
+            selectByMouse: true
+            text: Nav.query
+            onTextEdited: Nav.search(text)
+            onAccepted: Nav.search(text)
+            Keys.onEscapePressed: {
+                Nav.search("")
+                focus = false
             }
-            contentItem: Row {
-                leftPadding: 10
-                spacing: Theme.gap
-                Icon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: "search"
-                    size: 16
-                    color: Theme.textDim
+            background: Rectangle {
+                color: Theme.raised
+                border.color: search.activeFocus ? Theme.accent : Theme.line
+            }
+
+            Icon {
+                x: 10
+                anchors.verticalCenter: parent.verticalCenter
+                name: "search"
+                size: 16
+                color: Theme.textDim
+            }
+            IconButton {
+                id: clear
+                visible: search.text.length > 0
+                anchors.right: parent.right
+                anchors.rightMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 26
+                implicitHeight: 26
+                glyph: "close"
+                glyphSize: 14
+                onClicked: {
+                    Nav.search("")
+                    search.forceActiveFocus()
                 }
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Search"
-                    color: Theme.textDim
-                    font.pixelSize: Theme.fontBody
-                }
+            }
+        }
+        Shortcut {
+            sequences: ["Ctrl+K", "Ctrl+F"]
+            onActivated: {
+                search.forceActiveFocus()
+                search.selectAll()
             }
         }
 
         Repeater {
-            model: root.entries.filter(e => !e.eos || Session.eosFeatures)
+            model: root.entries
 
             delegate: Loader {
                 id: slot
@@ -76,7 +113,7 @@ Rectangle {
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
                         font.letterSpacing: 0.6
-                        topPadding: 18
+                        topPadding: 14
                         leftPadding: 12
                         bottomPadding: 6
                     }
@@ -89,7 +126,7 @@ Rectangle {
                         readonly property bool selected: root.currentKey === slot.modelData.key
                         implicitHeight: 34
                         hoverEnabled: true
-                        onClicked: root.navigate(slot.modelData.key)
+                        onClicked: Nav.openPage(slot.modelData.key)
                         background: Rectangle {
                             color: item.selected ? Theme.raised : item.hovered ? Theme.panel : "transparent"
                             Rectangle {
@@ -118,7 +155,7 @@ Rectangle {
             Layout.fillWidth: true
             text: "Settings"
             active: root.currentKey === "settings"
-            onClicked: root.navigate("settings")
+            onClicked: Nav.openPage("settings")
         }
     }
 }

@@ -13,6 +13,10 @@ Rectangle {
 
     readonly property var device: MockData.devices.find(d => d.id === Player.playbackDeviceId)
     readonly property bool remote: Player.playbackDeviceId !== "d1"
+    readonly property bool starred: {
+        Library.starRevision
+        return Player.current ? Library.isStarred(Player.current.trackId) : false
+    }
     readonly property int sideWidth: 300   // equal sides keep the transport centred
 
     RowLayout {
@@ -52,10 +56,27 @@ Rectangle {
                     Layout.fillWidth: true
                     visible: Player.current !== null
                     text: Player.current ? Player.current.artist + " · " + Player.current.album : ""
-                    color: Theme.textDim
+                    color: albumHover.hovered ? Theme.text : Theme.textDim
                     font.pixelSize: Theme.fontSmall
+                    font.underline: albumHover.hovered
                     elide: Text.ElideRight
+                    // Click: the playing track's album.
+                    HoverHandler {
+                        id: albumHover
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        onTapped: Nav.openAlbumId(Player.current.albumId, Player.current.album)
+                    }
                 }
+            }
+            IconButton {
+                visible: Player.current !== null
+                glyph: root.starred ? "heart" : "heartOutline"
+                glyphSize: 18
+                active: root.starred
+                tip: root.starred ? "Remove from Starred" : "Add to Starred"
+                onClicked: Library.setStarred([Player.current.trackId], !root.starred)
             }
         }
 
@@ -68,6 +89,14 @@ Rectangle {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 12
 
+                IconButton {
+                    glyph: "shuffle"
+                    glyphSize: 16
+                    tip: Player.shuffle ? "Shuffle: on" : "Shuffle: off"
+                    active: Player.shuffle
+                    marked: Player.shuffle
+                    onClicked: Player.toggleShuffle()
+                }
                 IconButton {
                     glyph: "previous"
                     tip: "Previous"
@@ -104,6 +133,14 @@ Rectangle {
                     tip: "Next"
                     enabled: Player.current !== null
                     onClicked: Player.next()
+                }
+                IconButton {
+                    glyph: Player.repeat === "one" ? "repeatOne" : "repeat"
+                    glyphSize: 16
+                    tip: Player.repeat === "all" ? "Repeat: queue" : Player.repeat === "one" ? "Repeat: track" : "Repeat: off"
+                    active: Player.repeat !== "off"
+                    marked: Player.repeat !== "off"
+                    onClicked: Player.cycleRepeat()
                 }
             }
 

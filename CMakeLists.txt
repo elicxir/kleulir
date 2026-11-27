@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Qt's deploy support reads this when Qt is found, so it must be set first.
 set(CMAKE_INSTALL_BINDIR ".")
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Network)
 qt_standard_project_setup(REQUIRES 6.8)
 
 # libeos: the UI-less client library shared with the other eos clients.
@@ -25,6 +25,7 @@ set_source_files_properties(
   qml/Theme.qml
   qml/Player.qml
   qml/MockData.qml
+  qml/Nav.qml
   PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
 
@@ -37,7 +38,10 @@ qt_add_qml_module(kleulir
     src/coverprovider.h src/coverprovider.cpp
     src/credentials.h src/credentials.cpp
     src/cache.h src/cache.cpp
+    src/app.h src/app.cpp
     src/audio.h src/audio.cpp
+  RESOURCES
+    assets/kleulir.svg
   QML_FILES
     qml/Main.qml
     qml/Theme.qml
@@ -51,13 +55,19 @@ qt_add_qml_module(kleulir
     qml/IconButton.qml
     qml/AlbumsPage.qml
     qml/AlbumPage.qml
-    qml/PlaceholderPage.qml
     qml/SettingsPage.qml
     qml/LoginPage.qml
+    qml/Nav.qml
+    qml/PopupMenu.qml
+    qml/PopupMenuItem.qml
+    qml/MenuDivider.qml
+    qml/TrackMenu.qml
+    qml/TrackList.qml
+    qml/SearchPage.qml
 )
 
 target_include_directories(kleulir PRIVATE src)
-target_link_libraries(kleulir PRIVATE Qt6::Quick Qt6::QuickControls2 eos::client advapi32 WindowsApp)
+target_link_libraries(kleulir PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network eos::client advapi32 WindowsApp)
 # C++/WinRT headers (Windows SDK) for the system media player.
 target_compile_options(kleulir PRIVATE /bigobj)
 

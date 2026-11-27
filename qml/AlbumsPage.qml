@@ -5,21 +5,57 @@ import Kleulir
 
 Item {
     id: root
-    signal openAlbum(var album)
-
-    // The list has no tracks; fetch the album, then start it.
-    property string pendingPlay: ""
-    function playAlbum(album) {
-        pendingPlay = album.id
+    // The list has no tracks; fetch the album, then act on it.
+    // mode: "play" | "next" | "queue"
+    property var pending: null
+    function act(album, mode) {
+        pending = { id: album.id, mode: mode }
         Library.loadAlbum(album.id)
     }
+    function playAlbum(album) { act(album, "play") }
     Connections {
         target: Library
         function onAlbumLoaded(id, album) {
-            if (id === root.pendingPlay) {
-                root.pendingPlay = ""
+            if (!root.pending || id !== root.pending.id)
+                return
+            const mode = root.pending.mode
+            root.pending = null
+            if (mode === "play")
                 Player.playAlbum(album, 0)
-            }
+            else if (mode === "next")
+                Player.playNextMany(album.tracks, album)
+            else
+                Player.enqueueMany(album.tracks, album)
+        }
+    }
+
+    PopupMenu {
+        id: albumMenu
+        property var album: null
+        readonly property bool starred: {
+            Library.starRevision
+            return album ? Library.isStarred(album.id) : false
+        }
+        PopupMenuItem {
+            text: "Play"
+            onTriggered: root.act(albumMenu.album, "play")
+        }
+        PopupMenuItem {
+            text: "Play next"
+            onTriggered: root.act(albumMenu.album, "next")
+        }
+        PopupMenuItem {
+            text: "Add to queue"
+            onTriggered: root.act(albumMenu.album, "queue")
+        }
+        MenuDivider {}
+        PopupMenuItem {
+            text: albumMenu.starred ? "Remove from Starred" : "Add to Starred"
+            onTriggered: Library.setStarred([albumMenu.album.id], !albumMenu.starred)
+        }
+        PopupMenuItem {
+            text: "Open album"
+            onTriggered: Nav.openAlbum(albumMenu.album)
         }
     }
 
@@ -200,14 +236,20 @@ Item {
                     height: cell.height - 8
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            albumMenu.album = cell.modelData
+                            albumMenu.popup()
+                            return
+                        }
                         // The lower-right corner of the cover is the play button.
                         const s = cell.side
                         const onPlay = mouse.x > s - 52 && mouse.y > s - 52 && mouse.y < s
                         if (onPlay)
                             root.playAlbum(cell.modelData)
                         else
-                            root.openAlbum(cell.modelData)
+                            Nav.openAlbum(cell.modelData)
                     }
                 }
             }

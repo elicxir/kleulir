@@ -1,0 +1,144 @@
+#include "app.h"
+
+#include <QCoreApplication>
+#include <QFont>
+#include <QFontDatabase>
+#include <QGuiApplication>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QPointer>
+#include <QProcess>
+#include <QSettings>
+
+#include <cmath>
+
+#include <windows.h>
+
+namespace {
+
+// What this run started with.
+double startedScale = 1.0;
+QString startedFont;
+
+// The QML-side App object, once the engine has created it.
+QPointer<App> appInstance;
+bool activationPending = false;
+
+// Usable before QCoreApplication exists, so the names are spelled out.
+QSettings settings() { return QSettings(QStringLiteral("kleulir"), QStringLiteral("kleulir")); }
+
+double savedScale() {
+  const double scale = settings().value("appearance/scale", 1.0).toDouble();
+  return scale >= 0.5 && scale <= 3.0 ? scale : 1.0;
+}
+
+QString savedFont() { return settings().value("appearance/font").toString(); }
+
+}  // namespace
+
+App::App(QObject* parent) : QObject(parent) {
+  appInstance = this;
+  // A launch that arrived before the UI existed.
+  if (activationPending) {
+    activationPending = false;
+    QMetaObject::invokeMethod(this, &App::activationRequested, Qt::QueuedConnection);
+  }
+}
+
+bool App::handOverToRunningInstance() {
+  const QString name = QStringLiteral("kleulir-instance");
+
+  QLocalSocket socket;
+  socket.connectToServer(name);
+  if (socket.waitForConnected(300)) {
+    // Windows only lets the foreground process hand the foreground on.
+    AllowSetForegroundWindow(ASFW_ANY);
+    socket.write("show");
+    socket.waitForBytesWritten(500);
+    socket.disconnectFromServer();
+    return true;
+  }
+
+  auto* server = new QLocalServer(QCoreApplication::instance());
+  // Windows: a second server cannot take a name that is in use, so a race between
+  // two launches leaves exactly one listener.
+  server->setSocketOptions(QLocalServer::UserAccessOption);
+  if (!server->listen(name)) return false;  // could not listen: just run
+  QObject::connect(server, &QLocalServer::newConnection, server, [server] {
+    while (QLocalSocket* client = server->nextPendingConnection()) {
+      client->deleteLater();
+      if (appInstance)
+        emit appInstance->activationRequested();
+      else
+        activationPending = true;
+    }
+  });
+  return false;
+}
+
+void App::applyScale() {
+  startedScale = savedScale();
+  // On top of the monitor's own scaling. An explicit QT_SCALE_FACTOR from outside wins.
+  if (std::abs(startedScale - 1.0) > 0.001 && !qEnvironmentVariableIsSet("QT_SCALE_FACTOR"))
+    qputenv("QT_SCALE_FACTOR", QByteArray::number(startedScale, 'f', 2));
+}
+
+void App::applyFont() {
+  startedFont = savedFont();
+  if (startedFont.isEmpty()) return;
+  QFont font = QGuiApplication::font();
+  font.setFamily(startedFont);
+  QGuiApplication::setFont(font);
+}
+
+double App::uiScale() const { return savedScale(); }
+
+void App::setUiScale(double scale) {
+  if (std::abs(scale - savedScale()) < 0.001) return;
+  settings().setValue("appearance/scale", scale);
+  emit changed();
+}
+
+QString App::fontFamily() const { return savedFont(); }
+
+void App::setFontFamily(const QString& family) {
+  if (family == savedFont()) return;
+  settings().setValue("appearance/font", family);
+  emit changed();
+}
+
+QStringList App::fontFamilies() const {
+  QStringList families;
+  for (const QString& family : QFontDatabase::families()) {
+    // Vertical-writing variants (@...) and private fonts are not for UI text.
+    if (!family.startsWith('@') && !QFontDatabase::isPrivateFamily(family)) families << family;
+  }
+  return families;
+}
+
+bool App::restartRequired() const {
+  return std::abs(savedScale() - startedScale) > 0.001 || savedFont() != startedFont;
+}
+
+bool App::closeToTray() const { return settings().value("tray/closeToTray", false).toBool(); }
+
+void App::setCloseToTray(bool on) {
+  if (on == closeToTray()) return;
+  settings().setValue("tray/closeToTray", on);
+  emit changed();
+}
+
+bool App::startInTray() const { return settings().value("tray/startHidden", false).toBool(); }
+
+void App::setStartInTray(bool on) {
+  if (on == startInTray()) return;
+  settings().setValue("tray/startHidden", on);
+  emit changed();
+}
+
+void App::restart() {
+  QProcess::startDetached(QCoreApplication::applicationFilePath(), {});
+  // exit(), not quit(): quit() asks the window to close, and with the tray option
+  // on the window answers by hiding instead.
+  QCoreApplication::exit(0);
+}

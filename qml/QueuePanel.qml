@@ -62,6 +62,35 @@ Rectangle {
             }
         }
 
+        // Right-click menu for one queue entry.
+        PopupMenu {
+            id: menu
+            property int row: -1
+            readonly property var entry: row >= 0 && row < Player.queue.count ? Player.queue.get(row) : null
+            readonly property bool starred: {
+                Library.starRevision
+                return entry ? Library.isStarred(entry.trackId) : false
+            }
+            PopupMenuItem {
+                text: "Play"
+                onTriggered: Player.jump(menu.row)
+            }
+            PopupMenuItem {
+                text: "Remove from queue"
+                onTriggered: Player.removeAt(menu.row)
+            }
+            MenuDivider {}
+            PopupMenuItem {
+                text: menu.starred ? "Remove from Starred" : "Add to Starred"
+                onTriggered: Library.setStarred([menu.entry.trackId], !menu.starred)
+            }
+            PopupMenuItem {
+                visible: menu.entry !== null && menu.entry.albumId.length > 0
+                text: "Go to album"
+                onTriggered: Nav.openAlbumId(menu.entry.albumId, menu.entry.album)
+            }
+        }
+
         ListView {
             id: list
             visible: Player.queue.count > 0
@@ -93,7 +122,17 @@ Rectangle {
                     id: rowArea
                     anchors.fill: parent
                     hoverEnabled: true
-                    onDoubleClicked: Player.jump(row.index)
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: mouse => {
+                        if (mouse.button === Qt.RightButton) {
+                            menu.row = row.index
+                            menu.popup()
+                        }
+                    }
+                    onDoubleClicked: mouse => {
+                        if (mouse.button === Qt.LeftButton)
+                            Player.jump(row.index)
+                    }
                 }
 
                 RowLayout {
