@@ -15,14 +15,18 @@ int main(int argc, char* argv[]) {
   App::applyScale();
 
   QGuiApplication app(argc, argv);
-  QGuiApplication::setApplicationName("kleulir");
+  // Development aid: KLEULIR_PROFILE=<name> keeps settings, cache and state apart from
+  // the everyday ones ("kleulir-<name>"), for trying a test server.
+  const QString profile = qEnvironmentVariable("KLEULIR_PROFILE");
+  QGuiApplication::setApplicationName(profile.isEmpty() ? QStringLiteral("kleulir") : "kleulir-" + profile);
   QGuiApplication::setOrganizationName("kleulir");
   QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Kleulir/assets/kleulir.svg")));
   App::applyFont();
 
   // One kleulir per user: a second launch shows the first one's window and exits.
   // (Screenshot runs are separate, so a check can run beside the real app.)
-  if (qEnvironmentVariableIsEmpty("KLEULIR_SCREENSHOT") && App::handOverToRunningInstance()) return 0;
+  if (qEnvironmentVariableIsEmpty("KLEULIR_SCREENSHOT") && profile.isEmpty() && App::handOverToRunningInstance())
+    return 0;
   // With the tray option on, the app outlives its window.
   QGuiApplication::setQuitOnLastWindowClosed(false);
 

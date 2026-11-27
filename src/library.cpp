@@ -762,3 +762,91 @@ void Library::loadFolder(const QString& id) {
     });
   });
 }
+
+// ---- eos: the graph of related songs ----------------------------------------------
+
+namespace {
+
+QString capitalised(const std::string& s) {
+  const QString q = qs(s);
+  return q.left(1).toUpper() + q.mid(1);
+}
+
+QString edgeLabel(const GraphEdge& e) {
+  if (e.type == "performance") {
+    if (e.arrangement_name && !e.arrangement_name->empty()) return qs(*e.arrangement_name);
+    return e.is_original ? QStringLiteral("Original") : capitalised(e.arrangement_kind.value_or("arrangement"));
+  }
+  if (e.type == "credit") return capitalised(e.role.value_or(""));
+  if (e.type == "similar") return e.score ? QString::number(*e.score, 'f', 2) : QString();
+  if (e.directed) return capitalised(e.type);  // medley, quote, derivative, cover, related
+  return {};
+}
+
+}  // namespace
+
+void Library::loadGraph(const QString& seed, const QString& mode) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, seed, mode] { loadGraph(seed, mode); });
+    return;
+  }
+  Session::async([this, api, seed, mode] {
+    GraphQuery q{.seed = seed.toStdString()};
+    if (mode == "similar") {
+      q.depth = 1;
+      q.include = {"similar"};
+      q.similar_k = 10;
+    } else {
+      q.depth = 2;
+      q.include = {"composition", "relation", "title"};
+      q.limit = 120;
+    }
+    QVariantMap map;
+    QVariantList nodes, edges, songs;
+    try {
+      const Graph g = api->graph(q);
+      for (const GraphNode& n : g.nodes) {
+        QVariantMap node{{"id", qs(n.id)},       {"type", qs(n.type)},          {"label", qs(n.label)},
+                         {"distance", n.distance}, {"degree", n.degree},          {"expanded", n.expanded},
+                         {"itemId", qs(n.id.substr(n.id.find(':') + 1))}};
+        if (n.song) {
+          const QVariantMap track = trackMap(*n.song, QString());
+          node["track"] = track;
+          node["subtitle"] = track["album"].toString();
+          songs.append(track);
+        } else if (n.composition) {
+          node["subtitle"] = names(n.composition->composers);
+        } else if (n.title) {
+          QStringList parts;
+          if (n.title->kind) parts << capitalised(*n.title->kind);
+          if (n.title->year) parts << QString::number(*n.title->year);
+          node["subtitle"] = parts.join(QStringLiteral(" · "));
+        } else if (n.album) {
+          node["subtitle"] = qs(n.album->display_artist.empty() ? n.album->artist : n.album->display_artist);
+        }
+        nodes.append(node);
+      }
+      for (const GraphEdge& e : g.edges) {
+        edges.append(QVariantMap{{"from", qs(e.from)},
+                                 {"to", qs(e.to)},
+                                 {"type", qs(e.type)},
+                                 {"label", edgeLabel(e)},
+                                 {"score", e.score.value_or(0.0)},
+                                 {"directed", e.directed},
+                                 {"estimated", e.provenance == "rule" || e.provenance == "llm"}});
+      }
+      map["truncated"] = g.truncated;
+    } catch (const Error& e) {
+      map["error"] = describe(e);
+    } catch (const std::exception& e) {
+      map["error"] = QString::fromUtf8(e.what());
+    }
+    map["nodes"] = nodes;
+    map["edges"] = edges;
+    Session::onMain([this, seed, mode, map, songs] {
+      absorbStars(songs);
+      emit graphLoaded(seed, mode, map);
+    });
+  });
+}

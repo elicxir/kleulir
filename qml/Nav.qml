@@ -5,7 +5,7 @@ import Kleulir
 // Where the content area is, with a back/forward history like a browser's.
 // An entry is { page, album? | artist? | playlist? | ... }; page is one of albums,
 // album, artists, artist, starred, playlists, playlist, search, settings, and on an
-// eos server folders, folder, works, work, compositions, composition, versions.
+// eos server folders, folder, works, work, compositions, composition, versions, graph.
 QtObject {
     id: root
 
@@ -35,6 +35,8 @@ QtObject {
             return a.composition.id === b.composition.id
         if (a.page === "versions")
             return a.song.id === b.song.id
+        if (a.page === "graph")
+            return a.seed === b.seed && a.mode === b.mode
         return true
     }
 

@@ -71,6 +71,7 @@ void Session::restore() {
     restoring_ = true;
     // Until the server answers, assume what was true last time.
     eosFeatures_ = QSettings().value("server/eos", false).toBool();
+    serverFeatures_ = QSettings().value("server/features").toStringList();
     connectWithKey(url, saved->username, saved->key);
   } else {
     emit changed();
@@ -123,19 +124,22 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
     try {
       const auto user = api->user();
       bool eos = true;
+      QStringList features;
       try {
-        api->info();
+        for (const auto& f : api->info().features) features.append(QString::fromStdString(f));
       } catch (const Error& e) {
         if (e.offline()) throw;
         eos = false;  // a plain OpenSubsonic server has no /ext
       }
-      onMain([this, api, user, eos] {
+      onMain([this, api, user, eos, features] {
         api_ = api;
         username_ = QString::fromStdString(user.username);
         admin_ = user.admin;
         eosFeatures_ = eos;
+        serverFeatures_ = features;
         restoring_ = false;
         QSettings().setValue("server/eos", eos);
+        QSettings().setValue("server/features", features);
         set(Ready);
       });
     } catch (const Error& e) {
@@ -163,6 +167,7 @@ void Session::logout() {
   username_.clear();
   admin_ = false;
   eosFeatures_ = false;
+  serverFeatures_.clear();
   restoring_ = false;
   set(LoggedOut);
 }
