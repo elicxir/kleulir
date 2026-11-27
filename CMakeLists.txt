@@ -33,10 +33,12 @@ qt_add_qml_module(kleulir
     qml/PlayerBar.qml
     qml/QueuePanel.qml
     qml/Cover.qml
+    qml/Icon.qml
     qml/IconButton.qml
     qml/AlbumsPage.qml
     qml/AlbumPage.qml
     qml/PlaceholderPage.qml
+    qml/SettingsPage.qml
 )
 
 target_link_libraries(kleulir PRIVATE Qt6::Quick Qt6::QuickControls2)

@@ -16,7 +16,7 @@ Item {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "この画面はまだ作っていません"
+            text: "Not built yet"
             color: Theme.textFaint
             font.pixelSize: Theme.fontBody
         }

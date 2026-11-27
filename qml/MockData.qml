@@ -59,8 +59,8 @@ QtObject {
     property bool eosFeatures: true
 
     readonly property var devices: [
-        { id: "d1", name: "このPC", online: true },
-        { id: "d2", name: "Pi Zero（リビング）", online: true },
-        { id: "d3", name: "Ubuntuデスクトップ", online: false }
+        { id: "d1", name: "This PC", online: true },
+        { id: "d2", name: "Pi Zero (Living room)", online: true },
+        { id: "d3", name: "Ubuntu desktop", online: false }
     ]
 }

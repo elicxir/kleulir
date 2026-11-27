@@ -11,20 +11,36 @@ ApplicationWindow {
     minimumHeight: 600
     visible: true
     title: Player.current ? Player.current.title + " — kleulir" : "kleulir"
-    color: Theme.bg
+    color: Theme.line
+
+    // Colours for the stock controls (tooltips, scroll bars, menus).
+    palette.window: Theme.panel
+    palette.windowText: Theme.text
+    palette.base: Theme.raised
+    palette.text: Theme.text
+    palette.button: Theme.raised
+    palette.buttonText: Theme.text
+    palette.mid: Theme.hover
+    palette.dark: Theme.textFaint
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.bg
+    palette.toolTipBase: Theme.raised
+    palette.toolTipText: Theme.text
 
     property string currentKey: "albums"
     property bool queueOpen: true
 
     readonly property var pageTitles: ({
-        artists: "アーティスト", genres: "ジャンル", folders: "フォルダ", works: "作品",
-        starred: "お気に入り", playlists: "プレイリスト", suggestions: "候補の承認", search: "検索"
+        artists: "Artists", genres: "Genres", folders: "Folders", works: "Works",
+        starred: "Starred", playlists: "Playlists", suggestions: "Suggestions", search: "Search"
     })
 
     function navigate(key) {
         currentKey = key
         if (key === "albums")
             stack.replace(null, albumsPage)
+        else if (key === "settings")
+            stack.replace(null, settingsPage)
         else
             stack.replace(null, placeholderPage, { title: pageTitles[key] })
     }
@@ -42,18 +58,23 @@ ApplicationWindow {
         }
     }
     Component {
+        id: settingsPage
+        SettingsPage {}
+    }
+    Component {
         id: placeholderPage
         PlaceholderPage {}
     }
 
+    // Panels sit flush; the 1px gaps let the window colour show as dividers.
     ColumnLayout {
         anchors.fill: parent
-        spacing: 0
+        spacing: 1
 
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            spacing: 1
 
             Sidebar {
                 Layout.preferredWidth: 200
@@ -62,25 +83,30 @@ ApplicationWindow {
                 onNavigate: key => window.navigate(key)
             }
 
-            StackView {
-                id: stack
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                initialItem: albumsPage
+                color: Theme.panel
 
-                // Plain cross-fades; page slides feel heavy in a list-driven app.
-                pushEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120 } }
-                pushExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
-                popEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120 } }
-                popExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
-                replaceEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120 } }
-                replaceExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
+                StackView {
+                    id: stack
+                    anchors.fill: parent
+                    clip: true
+                    initialItem: albumsPage
+
+                    // Plain cross-fades; page slides feel heavy in a list-driven app.
+                    pushEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 140 } }
+                    pushExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
+                    popEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 140 } }
+                    popExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
+                    replaceEnter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 140 } }
+                    replaceExit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } }
+                }
             }
 
             QueuePanel {
                 visible: window.queueOpen
-                Layout.preferredWidth: 300
+                Layout.preferredWidth: 320
                 Layout.fillHeight: true
             }
         }
@@ -95,10 +121,13 @@ ApplicationWindow {
     // Development aid: `--demo-album` opens the first album and starts it,
     // so the detail page and the queue can be checked in a screenshot run.
     Component.onCompleted: {
+        if (Qt.application.arguments.indexOf("--demo-settings") >= 0)
+            navigate("settings")
         if (Qt.application.arguments.indexOf("--demo-album") >= 0) {
             const album = MockData.albums[0]
             stack.push(albumPage, { album: album })
             Player.playAlbum(album, 2)
+            Player.position = 74
         }
     }
 

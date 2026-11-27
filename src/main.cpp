@@ -1,12 +1,16 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <QTimer>
 
 int main(int argc, char* argv[]) {
   QGuiApplication app(argc, argv);
   QGuiApplication::setApplicationName("kleulir");
   QGuiApplication::setOrganizationName("kleulir");
+
+  // The UI is dark only; this also makes Windows draw a dark title bar.
+  QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 
   QQmlApplicationEngine engine;
   QObject::connect(

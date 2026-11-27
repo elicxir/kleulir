@@ -10,41 +10,56 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.gap
-        spacing: Theme.gap
+        anchors.topMargin: 14
+        spacing: 10
 
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.gap
+            spacing: Theme.gap
 
             Text {
-                text: "キュー"
+                text: "Queue"
                 color: Theme.text
-                font.pixelSize: 15
-                font.weight: Font.DemiBold
+                font.pixelSize: 16
+                font.weight: Font.Bold
             }
             Text {
-                text: Player.queue.count + " 曲"
+                text: Player.queue.count + " tracks"
                 color: Theme.textFaint
                 font.pixelSize: Theme.fontSmall
+                Layout.alignment: Qt.AlignBaseline
             }
             Item { Layout.fillWidth: true }
             IconButton {
-                text: "全消去"
-                glyphSize: Theme.fontSmall
-                enabled: Player.queue.count > 0
+                text: "Clear"
+                labelSize: Theme.fontSmall
+                implicitHeight: 28
+                visible: Player.queue.count > 0
                 onClicked: Player.clear()
             }
         }
 
-        Text {
+        Item {
             visible: Player.queue.count === 0
             Layout.fillWidth: true
             Layout.fillHeight: true
-            text: "キューは空です"
-            color: Theme.textFaint
-            font.pixelSize: Theme.fontBody
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+            Column {
+                anchors.centerIn: parent
+                spacing: 8
+                Icon {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    name: "queue"
+                    size: 32
+                    color: Theme.hover
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Queue is empty"
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.fontBody
+                }
+            }
         }
 
         ListView {
@@ -53,6 +68,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            spacing: 0
             model: Player.queue
             ScrollBar.vertical: ScrollBar {}
 
@@ -61,13 +77,16 @@ Rectangle {
                 required property int index
                 required property string title
                 required property string artist
+                required property string album
                 required property real duration
                 readonly property bool isCurrent: index === Player.currentIndex
+                readonly property bool played: index < Player.currentIndex
+                readonly property bool hot: rowArea.containsMouse || upButton.hovered
+                                            || downButton.hovered || removeButton.hovered
 
                 width: list.width
-                height: 44
-                radius: Theme.radius
-                color: rowArea.containsMouse ? Theme.hover : row.isCurrent ? Theme.raised : "transparent"
+                height: 52
+                color: row.isCurrent ? Theme.raised : row.hot ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
 
                 MouseArea {
                     id: rowArea
@@ -80,46 +99,69 @@ Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: Theme.gap
                     anchors.rightMargin: 4
-                    spacing: 4
+                    spacing: 10
 
+                    Cover {
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
+                        title: row.album
+                        opacity: row.played ? 0.45 : 1
+                    }
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 0
+                        spacing: 1
+                        opacity: row.played ? 0.5 : 1
                         Text {
                             Layout.fillWidth: true
                             text: row.title
                             color: row.isCurrent ? Theme.accent : Theme.text
                             font.pixelSize: Theme.fontBody
+                            font.weight: row.isCurrent ? Font.DemiBold : Font.Normal
                             elide: Text.ElideRight
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: row.artist + " · " + Theme.time(row.duration)
+                            text: row.artist
                             color: Theme.textDim
                             font.pixelSize: Theme.fontSmall
                             elide: Text.ElideRight
                         }
                     }
+                    Text {
+                        visible: !row.hot
+                        Layout.rightMargin: 8
+                        text: Theme.time(row.duration)
+                        color: Theme.textFaint
+                        font.pixelSize: Theme.fontSmall
+                        font.features: { "tnum": 1 }
+                    }
                     // Reordering by buttons for now; drag comes with the real queue model.
-                    IconButton {
-                        visible: rowArea.containsMouse || hovered
-                        text: "↑"
-                        tip: "上へ"
-                        enabled: row.index > 0
-                        onClicked: Player.move(row.index, row.index - 1)
-                    }
-                    IconButton {
-                        visible: rowArea.containsMouse || hovered
-                        text: "↓"
-                        tip: "下へ"
-                        enabled: row.index < Player.queue.count - 1
-                        onClicked: Player.move(row.index, row.index + 1)
-                    }
-                    IconButton {
-                        visible: rowArea.containsMouse || hovered
-                        text: "×"
-                        tip: "キューから外す"
-                        onClicked: Player.removeAt(row.index)
+                    Row {
+                        visible: row.hot
+                        IconButton {
+                            id: upButton
+                            implicitWidth: 28
+                            glyph: "up"
+                            tip: "Move up"
+                            enabled: row.index > 0
+                            onClicked: Player.move(row.index, row.index - 1)
+                        }
+                        IconButton {
+                            id: downButton
+                            implicitWidth: 28
+                            glyph: "down"
+                            tip: "Move down"
+                            enabled: row.index < Player.queue.count - 1
+                            onClicked: Player.move(row.index, row.index + 1)
+                        }
+                        IconButton {
+                            id: removeButton
+                            implicitWidth: 28
+                            glyph: "close"
+                            glyphSize: 16
+                            tip: "Remove from queue"
+                            onClicked: Player.removeAt(row.index)
+                        }
                     }
                 }
             }
