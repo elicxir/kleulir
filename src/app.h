@@ -50,6 +50,11 @@ class App : public QObject {
 
   Q_INVOKABLE void restart();
 
+  // Small state files under %LOCALAPPDATA% (the play queue). `name` is a plain
+  // word; the text is whatever the caller wants back.
+  Q_INVOKABLE QString readState(const QString& name) const;
+  Q_INVOKABLE void writeState(const QString& name, const QString& text) const;
+
  signals:
   void changed();
   // kleulir was launched again: show the window that is already there.

@@ -7,7 +7,11 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPointer>
+#include <QDir>
+#include <QFile>
 #include <QProcess>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QSettings>
 
 #include <cmath>
@@ -141,4 +145,29 @@ void App::restart() {
   // exit(), not quit(): quit() asks the window to close, and with the tray option
   // on the window answers by hiding instead.
   QCoreApplication::exit(0);
+}
+
+namespace {
+
+QString statePath(const QString& name) {
+  QString safe = name;
+  safe.removeIf([](QChar c) { return !c.isLetterOrNumber() && c != '-' && c != '_'; });
+  const QString folder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/state";
+  QDir().mkpath(folder);
+  return folder + "/" + safe + ".json";
+}
+
+}  // namespace
+
+QString App::readState(const QString& name) const {
+  QFile file(statePath(name));
+  if (!file.open(QIODevice::ReadOnly)) return {};
+  return QString::fromUtf8(file.readAll());
+}
+
+void App::writeState(const QString& name, const QString& text) const {
+  QSaveFile file(statePath(name));
+  if (!file.open(QIODevice::WriteOnly)) return;
+  file.write(text.toUtf8());
+  file.commit();
 }

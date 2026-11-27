@@ -13,6 +13,7 @@ ListView {
     property var album: null           // set when the songs are one album's
     property bool groupByWork: false   // section headers per work (album pages)
     property bool showAlbum: false     // show each song's album (search results)
+    property string playlistId: ""     // set on a playlist's page
     property real sideMargin: 12       // room kept for the scroll bar
 
     clip: true
@@ -91,6 +92,7 @@ ListView {
         if (!isSelected(index))
             selectOnly(index)
         menu.tracks = selectedTracks()
+        menu.rows = Object.keys(selected).map(Number).sort((a, b) => a - b)
         menu.popup()
     }
 
@@ -120,6 +122,7 @@ ListView {
     property TrackMenu menu: TrackMenu {
         album: list.album
         showGoToAlbum: list.album === null
+        playlistId: list.playlistId
     }
 
     // ---- sections ----------------------------------------------------------

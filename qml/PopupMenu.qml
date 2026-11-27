@@ -6,6 +6,8 @@ import Kleulir
 Menu {
     id: root
     padding: 4
+    // Entries the menu creates itself (the row that opens a submenu).
+    delegate: PopupMenuItem {}
     background: Rectangle {
         implicitWidth: 220
         color: Theme.raised

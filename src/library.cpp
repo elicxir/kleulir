@@ -26,6 +26,8 @@ QVariantMap albumMap(const Album& a) {
       {"songCount", a.song_count},
       {"duration", a.duration},
       {"starred", a.starred.has_value()},
+      {"created", qs(a.created)},
+      {"artistId", qs(a.artist_id)},
   };
 }
 
@@ -56,10 +58,21 @@ QString describe(const Error& e) {
 Library::Library(QObject* parent) : QObject(parent) {
   // Show last run's album list at once; the server's answer replaces it.
   loadCachedAlbums();
-  if (Session::instance()->state() == Session::Ready) refresh();
+  if (Session::instance()->state() == Session::Ready) {
+    refresh();
+    refreshArtists();
+    refreshPlaylists();
+  }
 
   connect(Session::instance(), &Session::changed, this, [this] {
     const bool ready = Session::instance()->state() == Session::Ready;
+    if (ready && artists_.isEmpty()) refreshArtists();
+    if (ready && playlists_.isEmpty()) refreshPlaylists();
+    if (ready && !deferred_.isEmpty()) {
+      const auto calls = deferred_;
+      deferred_.clear();
+      for (const auto& call : calls) call();
+    }
     if (ready && !waiting_.isEmpty()) {
       const QStringList ids = waiting_;
       waiting_.clear();
@@ -70,8 +83,13 @@ Library::Library(QObject* parent) : QObject(parent) {
     } else if (Session::instance()->state() == Session::LoggedOut && !albums_.isEmpty()) {
       ++generation_;
       albums_.clear();
+      artists_.clear();
+      playlists_.clear();
       details_.clear();
       waiting_.clear();
+      deferred_.clear();
+      emit artistsChanged();
+      emit playlistsChanged();
       fresh_ = false;
       emit albumsChanged();
     }
@@ -254,8 +272,12 @@ void Library::setStarred(const QStringList& ids, bool starred) {
 void Library::search(const QString& query) {
   auto api = Session::instance()->api();
   const QString text = query.trimmed();
-  if (!api || text.isEmpty()) {
+  if (text.isEmpty()) {
     emit searchLoaded(query, {});
+    return;
+  }
+  if (!api) {
+    whenReady([this, query] { search(query); });
     return;
   }
   const bool eos = Session::instance()->eosFeatures();
@@ -290,5 +312,231 @@ void Library::search(const QString& query) {
       absorbStars(songs);
       emit searchLoaded(query, {{"albums", albums}, {"songs", songs}});
     });
+  });
+}
+
+// ---- starred -------------------------------------------------------------------
+
+void Library::whenReady(std::function<void()> call) {
+  if (Session::instance()->api())
+    call();
+  else
+    deferred_.append(std::move(call));
+}
+
+void Library::loadStarred() {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this] { loadStarred(); });
+    return;
+  }
+  Session::async([this, api] {
+    QVariantList albums, songs;
+    try {
+      const auto found = api->starred();
+      for (const Album& a : found.albums) albums.append(albumMap(a));
+      for (const Song& s : found.songs) songs.append(trackMap(s, {}));
+    } catch (const std::exception&) {
+      // Leave the lists empty.
+    }
+    Session::onMain([this, albums, songs] {
+      absorbStars(albums);
+      absorbStars(songs);
+      emit starredLoaded({{"albums", albums}, {"songs", songs}});
+    });
+  });
+}
+
+// ---- artists -------------------------------------------------------------------
+
+void Library::refreshArtists() {
+  auto api = Session::instance()->api();
+  if (!api) return;
+  Session::async([this, api] {
+    QVariantList list;
+    try {
+      const auto all = api->artists();
+      for (const ArtistIndex& group : all.index) {
+        for (const Artist& a : group.artists) {
+          list.append(QVariantMap{
+              {"id", qs(a.id)},
+              {"name", qs(a.name)},
+              {"albumCount", a.album_count},
+              {"index", qs(group.name)},
+          });
+        }
+      }
+    } catch (const std::exception&) {
+      return;  // keep what we have
+    }
+    Session::onMain([this, list] {
+      if (artists_ == list) return;
+      artists_ = list;
+      emit artistsChanged();
+    });
+  });
+}
+
+void Library::loadArtist(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadArtist(id); });
+    return;
+  }
+  Session::async([this, api, id] {
+    try {
+      const auto artist = api->artist(id.toStdString());
+      QVariantList albums;
+      for (const Album& a : artist.albums) albums.append(albumMap(a));
+      const QVariantMap map{{"id", id}, {"name", qs(artist.name)}, {"albums", albums}};
+      Session::onMain([this, id, map, albums] {
+        absorbStars(albums);
+        emit artistLoaded(id, map);
+      });
+    } catch (const std::exception&) {
+      Session::onMain([this, id] { emit artistLoaded(id, {{"id", id}, {"name", QString()}, {"albums", QVariantList()}}); });
+    }
+  });
+}
+
+// ---- playlists -----------------------------------------------------------------
+
+namespace {
+
+QVariantMap playlistMap(const Playlist& p) {
+  return {
+      {"id", qs(p.id)},       {"name", qs(p.name)},   {"songCount", p.song_count},
+      {"duration", p.duration}, {"owner", qs(p.owner)}, {"comment", qs(p.comment)},
+  };
+}
+
+std::vector<std::string> toStd(const QStringList& ids) {
+  std::vector<std::string> out;
+  for (const QString& id : ids) out.push_back(id.toStdString());
+  return out;
+}
+
+}  // namespace
+
+void Library::refreshPlaylists() {
+  auto api = Session::instance()->api();
+  if (!api) return;
+  Session::async([this, api] {
+    QVariantList list;
+    try {
+      for (const Playlist& p : api->playlists()) list.append(playlistMap(p));
+    } catch (const std::exception&) {
+      return;
+    }
+    Session::onMain([this, list] {
+      if (playlists_ == list) return;
+      playlists_ = list;
+      emit playlistsChanged();
+    });
+  });
+}
+
+void Library::loadPlaylist(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadPlaylist(id); });
+    return;
+  }
+  Session::async([this, api, id] {
+    try {
+      const auto p = api->playlist(id.toStdString());
+      QVariantMap map = playlistMap(p);
+      QVariantList tracks;
+      for (const Song& s : p.songs) tracks.append(trackMap(s, {}));
+      map["tracks"] = tracks;
+      Session::onMain([this, id, map, tracks] {
+        absorbStars(tracks);
+        emit playlistLoaded(id, map);
+      });
+    } catch (const std::exception&) {
+      // The page keeps what it shows.
+    }
+  });
+}
+
+void Library::createPlaylist(const QString& name, const QStringList& songIds) {
+  auto api = Session::instance()->api();
+  if (!api || name.trimmed().isEmpty()) return;
+  Session::async([this, api, name, songIds] {
+    try {
+      const auto created = api->create_playlist(name.trimmed().toStdString(), toStd(songIds));
+      const QString id = qs(created.id);
+      Session::onMain([this, id, name] {
+        refreshPlaylists();
+        emit playlistCreated(id, name.trimmed());
+      });
+    } catch (const std::exception&) {
+    }
+  });
+}
+
+void Library::addToPlaylist(const QString& id, const QStringList& songIds) {
+  auto api = Session::instance()->api();
+  if (!api || songIds.isEmpty()) return;
+  Session::async([this, api, id, songIds] {
+    try {
+      PlaylistUpdate update;
+      update.add_song_ids = toStd(songIds);
+      api->update_playlist(id.toStdString(), update);
+      Session::onMain([this, id] {
+        refreshPlaylists();
+        emit playlistChanged(id);
+      });
+    } catch (const std::exception&) {
+    }
+  });
+}
+
+void Library::removeFromPlaylist(const QString& id, const QVariantList& indexes) {
+  auto api = Session::instance()->api();
+  if (!api || indexes.isEmpty()) return;
+  Session::async([this, api, id, indexes] {
+    try {
+      PlaylistUpdate update;
+      for (const QVariant& index : indexes) update.remove_indexes.push_back(index.toInt());
+      api->update_playlist(id.toStdString(), update);
+      Session::onMain([this, id] {
+        refreshPlaylists();
+        emit playlistChanged(id);
+      });
+    } catch (const std::exception&) {
+    }
+  });
+}
+
+void Library::renamePlaylist(const QString& id, const QString& name) {
+  auto api = Session::instance()->api();
+  if (!api || name.trimmed().isEmpty()) return;
+  Session::async([this, api, id, name] {
+    try {
+      PlaylistUpdate update;
+      update.name = name.trimmed().toStdString();
+      api->update_playlist(id.toStdString(), update);
+      Session::onMain([this, id] {
+        refreshPlaylists();
+        emit playlistChanged(id);
+      });
+    } catch (const std::exception&) {
+    }
+  });
+}
+
+void Library::deletePlaylist(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) return;
+  Session::async([this, api, id] {
+    try {
+      api->delete_playlist(id.toStdString());
+      Session::onMain([this, id] {
+        refreshPlaylists();
+        emit playlistDeleted(id);
+      });
+    } catch (const std::exception&) {
+    }
   });
 }

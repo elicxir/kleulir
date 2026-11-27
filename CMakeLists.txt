@@ -16,6 +16,7 @@ add_subdirectory(external/eos/client/libeos)
 
 qt_add_executable(kleulir WIN32
   src/main.cpp
+  assets/kleulir.rc   # the icon of the .exe (assets/make_icon.py draws it)
 )
 
 # Singletons. Player and MockData stand in for libeos until it exists;
@@ -40,6 +41,10 @@ qt_add_qml_module(kleulir
     src/cache.h src/cache.cpp
     src/app.h src/app.cpp
     src/audio.h src/audio.cpp
+    src/audiobackend.h
+    src/mpvbackend.h src/mpvbackend.cpp
+    src/winrtbackend.h src/winrtbackend.cpp
+    src/mediakeys.h src/mediakeys.cpp
   RESOURCES
     assets/kleulir.svg
   QML_FILES
@@ -64,6 +69,14 @@ qt_add_qml_module(kleulir
     qml/TrackMenu.qml
     qml/TrackList.qml
     qml/SearchPage.qml
+    qml/AlbumGrid.qml
+    qml/AlbumRow.qml
+    qml/Segmented.qml
+    qml/StarredPage.qml
+    qml/ArtistsPage.qml
+    qml/ArtistPage.qml
+    qml/PlaylistsPage.qml
+    qml/PlaylistPage.qml
 )
 
 target_include_directories(kleulir PRIVATE src)

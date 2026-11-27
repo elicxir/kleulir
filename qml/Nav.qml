@@ -3,7 +3,8 @@ import QtQuick
 import Kleulir
 
 // Where the content area is, with a back/forward history like a browser's.
-// An entry is { page: "albums" | "album" | "search" | "settings", album? }.
+// An entry is { page, album? | artist? | playlist? }; page is one of albums, album,
+// artists, artist, starred, playlists, playlist, search, settings.
 QtObject {
     id: root
 
@@ -17,7 +18,15 @@ QtObject {
     property string query: ""
 
     function same(a, b) {
-        return a.page === b.page && (a.page !== "album" || a.album.id === b.album.id)
+        if (a.page !== b.page)
+            return false
+        if (a.page === "album")
+            return a.album.id === b.album.id
+        if (a.page === "artist")
+            return a.artist.id === b.artist.id
+        if (a.page === "playlist")
+            return a.playlist.id === b.playlist.id
+        return true
     }
 
     function go(entry) {

@@ -1,4 +1,5 @@
 pragma Singleton
+import QtCore
 import QtQuick
 import Kleulir
 
@@ -73,6 +74,7 @@ QtObject {
 
     // Starts the current queue entry from the top.
     function start() {
+        resumePending = false
         position = 0
         if (currentIndex < 0 || currentIndex >= queue.count) {
             playing = false
@@ -84,11 +86,44 @@ QtObject {
         Audio.play(e.trackId, 0, false, {
             title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
         })
+        syncNext()
+    }
+
+    // ---- gapless ----------------------------------------------------------
+
+    // The entry that follows the current one when it ends by itself, or -1.
+    // Repeat-one is not handed to the player: the track is restarted instead.
+    function followingIndex() {
+        if (currentIndex < 0 || repeat === "one")
+            return -1
+        if (currentIndex + 1 < queue.count)
+            return currentIndex + 1
+        return repeat === "all" && queue.count > 0 ? 0 : -1
+    }
+
+    // Keeps the audio player's "next" in step with the queue, so the change of
+    // track happens inside the player, without a gap.
+    function syncNext() {
+        if (resumePending || !current)
+            return
+        const index = followingIndex()
+        if (index < 0) {
+            Audio.setNext("", {})
+            return
+        }
+        const e = queue.get(index)
+        Audio.setNext(e.trackId, {
+            title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
+        })
     }
 
     function toggle() {
         if (!current)
             return
+        if (resumePending) {
+            resume()
+            return
+        }
         playing = !playing
         Audio.setPaused(!playing)
     }
@@ -114,6 +149,8 @@ QtObject {
 
     function seek(seconds) {
         position = Math.max(0, Math.min(seconds, duration))
+        if (resumePending)
+            return      // nothing loaded yet; Play starts from here
         Audio.seek(position)
     }
 
@@ -274,13 +311,96 @@ QtObject {
         Audio.stop()
     }
 
+    // ---- remembered between runs -------------------------------------------
+
+    property Settings saved: Settings {
+        category: "player"
+        property alias volume: root.volume
+        property alias muted: root.muted
+        property alias repeat: root.repeat
+    }
+
+    property bool restored: false      // the saved queue has been read
+    property bool resumePending: false // a restored track still has to be loaded
+
+    function saveQueue() {
+        if (!restored)
+            return
+        App.writeState("queue", JSON.stringify({
+            entries: entries(), index: currentIndex, position: Math.floor(position),
+            shuffle: shuffle, unshuffled: unshuffled
+        }))
+    }
+
+    // A restored queue is only shown at first: nothing is loaded into the audio
+    // player, so starting the app never makes a sound. The first press of Play
+    // loads the track at the position it had.
+    function resume() {
+        resumePending = false
+        if (currentIndex < 0 || currentIndex >= queue.count)
+            return
+        const e = queue.get(currentIndex)
+        playing = true
+        Audio.play(e.trackId, position, false, {
+            title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
+        })
+        syncNext()
+    }
+
+    Component.onCompleted: {
+        Audio.setVolume(Math.round(volume * 100))
+        Audio.setMuted(muted)
+        try {
+            const state = JSON.parse(App.readState("queue") || "null")
+            if (state && state.entries && state.entries.length > 0) {
+                setEntries(state.entries)
+                nextUid = state.entries.reduce((top, e) => Math.max(top, e.uid || 0), 0) + 1
+                currentIndex = Math.max(0, Math.min(state.index, state.entries.length - 1))
+                position = state.position || 0
+                shuffle = !!state.shuffle
+                unshuffled = state.unshuffled || []
+                resumePending = true
+                ++revision
+            }
+        } catch (error) {
+            console.warn("saved queue could not be read:", error)
+        }
+        restored = true
+    }
+
+    onRevisionChanged: {
+        queueSaver.restart()
+        syncNext()
+    }
+    onRepeatChanged: syncNext()
+    onPlayingChanged: queueSaver.restart()
+    property Timer queueSaver: Timer {
+        interval: 1500
+        onTriggered: root.saveQueue()
+    }
+    // While playing, the position is written now and then, so a crash loses little.
+    property Timer positionSaver: Timer {
+        interval: 15000
+        repeat: true
+        running: root.playing
+        onTriggered: root.saveQueue()
+    }
+    property Connections appEvents: Connections {
+        target: Qt.application
+        function onAboutToQuit() { root.saveQueue() }
+    }
+
     // ---- events from the audio backend -------------------------------------
 
     property Connections audioEvents: Connections {
         target: Audio
         function onPositionChanged() {
-            if (root.current)
-                root.position = Audio.position
+            if (!root.current || root.resumePending)
+                return
+            // The Windows player's position runs a little ahead of the sound and
+            // goes a second or two past the end before it changes track. Shown
+            // as is, the clock would read past the track's length; hold it there.
+            root.position = root.duration > 0 ? Math.min(Audio.position, root.duration) : Audio.position
         }
         // Media keys and the system flyout.
         function onPausedChanged(paused) {
@@ -289,6 +409,18 @@ QtObject {
         }
         function onNextRequested() { root.next() }
         function onPreviousRequested() { root.previous() }
+        // The player went on to the track it was given, without a gap: follow it.
+        function onAdvanced(trackId) {
+            const index = root.followingIndex()
+            if (index >= 0 && root.queue.get(index).trackId === trackId) {
+                root.currentIndex = index
+                root.position = 0
+                ++root.revision
+            } else {
+                // The queue changed under it; play what the queue says instead.
+                root.next()
+            }
+        }
         function onFinished(trackId) {
             if (!root.current || root.current.trackId !== trackId)
                 return

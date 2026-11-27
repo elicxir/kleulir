@@ -362,6 +362,13 @@ Flickable {
                     font.pixelSize: Theme.fontBody
                 }
 
+                Text { text: "Playback"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
+                Text {
+                    text: Audio.backend === "mpv" ? "mpv" : "Windows media player (mpv not found)"
+                    color: Theme.text
+                    font.pixelSize: Theme.fontBody
+                }
+
                 Text { text: "Server type"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
                 Text {
                     text: Session.eosFeatures ? "eos (extended API available)" : "OpenSubsonic (standard API only)"

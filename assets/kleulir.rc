@@ -1,0 +1,2 @@
+// The application icon: shown by Explorer, shortcuts and the taskbar.
+IDI_ICON1 ICON "kleulir.ico"

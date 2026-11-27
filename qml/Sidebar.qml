@@ -8,13 +8,20 @@ Rectangle {
     color: Theme.bg
 
     // The page that is open; an album belongs under Albums.
-    readonly property string currentKey: Nav.current.page === "album" ? "albums" : Nav.current.page
+    readonly property string currentKey: {
+        const page = Nav.current.page
+        return page === "album" ? "albums" : page === "artist" ? "artists" : page === "playlist" ? "playlists" : page
+    }
 
-    // Only pages that exist. Artists, Genres, Folders, Works, Starred, Playlists
-    // and Suggestions come back as they are built.
+    // Only pages that exist. Genres, Folders, Works and Suggestions come back as
+    // they are built.
     readonly property var entries: [
         { section: "LIBRARY" },
-        { key: "albums", label: "Albums" }
+        { key: "albums", label: "Albums" },
+        { key: "artists", label: "Artists" },
+        { section: "YOU" },
+        { key: "starred", label: "Starred" },
+        { key: "playlists", label: "Playlists" }
     ]
 
     ColumnLayout {

@@ -133,6 +133,26 @@ ApplicationWindow {
         id: searchPage
         SearchPage {}
     }
+    Component {
+        id: starredPage
+        StarredPage {}
+    }
+    Component {
+        id: artistsPage
+        ArtistsPage {}
+    }
+    Component {
+        id: artistPage
+        ArtistPage {}
+    }
+    Component {
+        id: playlistsPage
+        PlaylistsPage {}
+    }
+    Component {
+        id: playlistPage
+        PlaylistPage {}
+    }
     function render() {
         const entry = Nav.current
         if (entry.page === "album")
@@ -141,6 +161,16 @@ ApplicationWindow {
             stack.replace(null, settingsPage)
         else if (entry.page === "search")
             stack.replace(null, searchPage)
+        else if (entry.page === "starred")
+            stack.replace(null, starredPage)
+        else if (entry.page === "artists")
+            stack.replace(null, artistsPage)
+        else if (entry.page === "artist")
+            stack.replace(null, artistPage, { artist: entry.artist })
+        else if (entry.page === "playlists")
+            stack.replace(null, playlistsPage)
+        else if (entry.page === "playlist")
+            stack.replace(null, playlistPage, { playlist: entry.playlist })
         else
             stack.clear()
     }
@@ -218,6 +248,10 @@ ApplicationWindow {
     Component.onCompleted: {
         if (Qt.application.arguments.indexOf("--demo-settings") >= 0)
             Nav.openPage("settings")
+        // `--demo-page=<name>`: open that page (starred, artists, playlists).
+        const demoPage = Qt.application.arguments.find(a => a.startsWith("--demo-page="))
+        if (demoPage)
+            Nav.openPage(demoPage.substring(12))
         // `--demo-search=<text>`: open the search page with that text.
         const demoSearch = Qt.application.arguments.find(a => a.startsWith("--demo-search="))
         if (demoSearch)
@@ -232,6 +266,7 @@ ApplicationWindow {
 
     // `--demo-album`: once the library has loaded, open its first album.
     property bool demoDone: false
+    property bool demoPlayed: false
     function tryDemo() {
             if (window.demoDone || Library.albums.length === 0
                     || Qt.application.arguments.indexOf("--demo-album") < 0)
@@ -246,12 +281,22 @@ ApplicationWindow {
         function onAlbumsChanged() { window.tryDemo() }
     }
 
+    // `--demo-gapless`: jump close to the end of the first track, to watch the
+    // change to the second one.
+    Timer {
+        interval: 2500
+        running: Qt.application.arguments.indexOf("--demo-gapless") >= 0 && Player.playing && Player.currentIndex === 0
+        onTriggered: Player.seek(Player.duration - 5)
+    }
+
     // `--demo-play`: also start that album, to check real playback.
     Connections {
         target: Library
         function onAlbumLoaded(id, album) {
-            if (Qt.application.arguments.indexOf("--demo-play") >= 0 && Player.queue.count === 0)
+            if (Qt.application.arguments.indexOf("--demo-play") >= 0 && !window.demoPlayed) {
+                window.demoPlayed = true
                 Player.playAlbum(album, 0)
+            }
         }
     }
 
