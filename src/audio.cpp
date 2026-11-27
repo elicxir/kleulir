@@ -127,7 +127,7 @@ Audio::~Audio() {
     impl_->previous.revoke();
     try {
       impl_->player.Source(nullptr);
-          impl_->player.Close();
+      impl_->player.Close();
     } catch (const hresult_error&) {
     }
   }
