@@ -93,6 +93,13 @@ class Library : public QObject {
   Q_INVOKABLE void loadFolders();
   // Answers with folderLoaded: id, name, albums.
   Q_INVOKABLE void loadFolder(const QString& id);
+  // The graph around `seed` ("song:<id>", "composition:<id>", ...; a node's id can be
+  // passed back). mode "related": compositions, relations and works, two steps;
+  // "similar": the songs that sound most alike (Session.hasFeature("similarity")).
+  // Answers with graphLoaded: nodes (id, type, label, subtitle, distance, degree,
+  // expanded, track for songs, itemId), edges (from, to, type, label, score, estimated),
+  // truncated, and error when the server refused.
+  Q_INVOKABLE void loadGraph(const QString& seed, const QString& mode);
 
  signals:
   void albumsChanged();   // the list itself changed
@@ -117,6 +124,7 @@ class Library : public QObject {
   void versionsLoaded(const QString& songId, const QVariantMap& versions);
   void foldersLoaded(const QVariantList& folders);
   void folderLoaded(const QString& id, const QVariantMap& folder);
+  void graphLoaded(const QString& seed, const QString& mode, const QVariantMap& graph);
 
  private:
   explicit Library(QObject* parent = nullptr);

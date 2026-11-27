@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QtQml/qqmlregistration.h>
 
 #include <functional>
@@ -24,6 +25,8 @@ class Session : public QObject {
   Q_PROPERTY(bool admin READ admin NOTIFY changed)
   // false on a plain OpenSubsonic server: no /ext, so no folders, works or sync.
   Q_PROPERTY(bool eosFeatures READ eosFeatures NOTIFY changed)
+  // What GET /ext/info lists (graph, similarity, ...); empty on a plain server.
+  Q_PROPERTY(QStringList serverFeatures READ serverFeatures NOTIFY changed)
   Q_PROPERTY(QString error READ error NOTIFY changed)
   // true while reconnecting with a saved key: the UI shows the library (from its
   // cache) instead of the login page.
@@ -41,6 +44,8 @@ class Session : public QObject {
   QString username() const { return username_; }
   bool admin() const { return admin_; }
   bool eosFeatures() const { return eosFeatures_; }
+  QStringList serverFeatures() const { return serverFeatures_; }
+  Q_INVOKABLE bool hasFeature(const QString& name) const { return serverFeatures_.contains(name); }
   QString error() const { return error_; }
   bool restoring() const { return restoring_; }
 
@@ -72,6 +77,7 @@ class Session : public QObject {
   QString serverUrl_, username_, error_;
   bool admin_ = false;
   bool eosFeatures_ = false;
+  QStringList serverFeatures_;
   bool restoring_ = false;
   std::shared_ptr<eos::client::Api> api_;
 };
