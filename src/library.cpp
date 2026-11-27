@@ -4,6 +4,7 @@
 #include <QJSEngine>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QTimer>
 
 #include "cache.h"
 
@@ -53,47 +54,106 @@ QString describe(const Error& e) {
   return e.offline() ? QStringLiteral("Cannot reach the server.") : qs(e.what());
 }
 
+QString describe(const std::exception& e) {
+  if (const auto* error = dynamic_cast<const Error*>(&e)) return describe(*error);
+  return QString::fromUtf8(e.what());
+}
+
 }  // namespace
 
 Library::Library(QObject* parent) : QObject(parent) {
   // Show last run's album list at once; the server's answer replaces it.
+  server_ = Session::instance()->serverUrl();
   loadCachedAlbums();
-  if (Session::instance()->state() == Session::Ready) {
-    refresh();
-    refreshArtists();
-    refreshPlaylists();
-  }
+  if (Session::instance()->state() == Session::Ready) refreshAll();
 
   connect(Session::instance(), &Session::changed, this, [this] {
-    const bool ready = Session::instance()->state() == Session::Ready;
-    if (ready && artists_.isEmpty()) refreshArtists();
-    if (ready && playlists_.isEmpty()) refreshPlaylists();
-    if (ready && !deferred_.isEmpty()) {
+    const Session* session = Session::instance();
+    // Another server, or nobody logged in: nothing of the last one may stay.
+    if (session->state() == Session::LoggedOut || session->serverUrl() != server_) {
+      const bool otherServer = session->serverUrl() != server_;
+      server_ = session->serverUrl();
+      reset();
+      if (otherServer && session->state() != Session::LoggedOut) {
+        loadCachedAlbums();
+        if (!albums_.isEmpty()) emit albumsChanged();
+      }
+    }
+    if (session->state() != Session::Ready) return;
+
+    if (artists_.isEmpty()) refreshArtists();
+    if (playlists_.isEmpty()) refreshPlaylists();
+    if (!deferred_.isEmpty()) {
       const auto calls = deferred_;
       deferred_.clear();
       for (const auto& call : calls) call();
     }
-    if (ready && !waiting_.isEmpty()) {
+    if (!waiting_.isEmpty()) {
       const QStringList ids = waiting_;
       waiting_.clear();
       for (const QString& id : ids) loadAlbum(id);
     }
-    if (ready && !fresh_ && !loading_) {
-      refresh();
-    } else if (Session::instance()->state() == Session::LoggedOut && !albums_.isEmpty()) {
-      ++generation_;
-      albums_.clear();
-      artists_.clear();
-      playlists_.clear();
-      details_.clear();
-      waiting_.clear();
-      deferred_.clear();
-      emit artistsChanged();
-      emit playlistsChanged();
-      fresh_ = false;
-      emit albumsChanged();
-    }
+    if (!fresh_ && !loading_) refresh();
   });
+
+  // kleulir stays in the tray for days: pick up what was added to the server meanwhile.
+  auto* timer = new QTimer(this);
+  timer->setInterval(15 * 60 * 1000);
+  connect(timer, &QTimer::timeout, this, [this] {
+    if (Session::instance()->state() == Session::Ready && !loading_) refreshAll();
+  });
+  timer->start();
+}
+
+void Library::refreshAll() {
+  refresh();
+  refreshArtists();
+  refreshPlaylists();
+}
+
+// Forgets everything that came from a server.
+void Library::reset() {
+  ++generation_;
+  waiting_.clear();
+  deferred_.clear();
+  details_.clear();
+  fresh_ = false;
+  if (!albums_.isEmpty()) {
+    albums_.clear();
+    emit albumsChanged();
+  }
+  if (!artists_.isEmpty()) {
+    artists_.clear();
+    emit artistsChanged();
+  }
+  if (!playlists_.isEmpty()) {
+    playlists_.clear();
+    emit playlistsChanged();
+  }
+  if (!starred_.isEmpty()) {
+    starred_.clear();
+    ++starRevision_;
+    emit starsChanged();
+  }
+  if (loading_ || !error_.isEmpty()) {
+    loading_ = false;
+    error_.clear();
+    emit statusChanged();
+  }
+}
+
+// Hands an answer to the main thread, unless the session it was asked in is over
+// (logged out, or logged in again): it would put one server's data into another's.
+void Library::deliver(const std::shared_ptr<eos::client::Api>& api, std::function<void()> done) {
+  Session::onMain([api, done = std::move(done)] {
+    if (Session::instance()->api() == api) done();
+  });
+}
+
+// For a failed call, from the worker thread: the UI says so instead of showing nothing.
+void Library::report(const std::exception& e) {
+  const QString text = describe(e);
+  Session::onMain([this, text] { emit problem(text); });
 }
 
 Library* Library::instance() {
@@ -143,7 +203,7 @@ void Library::refresh() {
     }
     if (error.isEmpty())
       cache::write(cacheFile, QJsonDocument(QJsonArray::fromVariantList(list)).toJson(QJsonDocument::Compact));
-    Session::onMain([this, list, error, generation] {
+    deliver(api, [this, list, error, generation] {
       if (generation != generation_) return;
       loading_ = false;
       error_ = error;
@@ -202,17 +262,17 @@ void Library::loadAlbum(const QString& id) {
         for (const Song& s : full.songs) tracks.append(trackMap(s, {}));
       }
       album["tracks"] = tracks;
-      Session::onMain([this, id, album] {
+      deliver(api, [this, id, album] {
         details_.insert(id, album);
         absorbStars(album.value("tracks").toList());
         emit albumLoaded(id, album);
       });
     } catch (const Error& e) {
       const QString text = describe(e);
-      Session::onMain([this, id, text] { emit albumFailed(id, text); });
+      deliver(api, [this, id, text] { emit albumFailed(id, text); });
     } catch (const std::exception& e) {
       const QString text = QString::fromUtf8(e.what());
-      Session::onMain([this, id, text] { emit albumFailed(id, text); });
+      deliver(api, [this, id, text] { emit albumFailed(id, text); });
     }
   });
 }
@@ -263,8 +323,9 @@ void Library::setStarred(const QStringList& ids, bool starred) {
         api->star(list);
       else
         api->unstar(list);
-    } catch (const std::exception&) {
-      Session::onMain([ids, starred, apply] { apply(ids, !starred); });
+    } catch (const std::exception& e) {
+      report(e);
+      deliver(api, [ids, starred, apply] { apply(ids, !starred); });
     }
   });
 }
@@ -304,10 +365,11 @@ void Library::search(const QString& query) {
         for (const Song& s : found.songs) songs.append(trackMap(s, {}));
         for (const Album& a : found.albums) albums.append(albumMap(a));
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       // Leave the lists empty; the page shows "no results".
     }
-    Session::onMain([this, query, albums, songs] {
+    deliver(api, [this, query, albums, songs] {
       absorbStars(albums);
       absorbStars(songs);
       emit searchLoaded(query, {{"albums", albums}, {"songs", songs}});
@@ -336,10 +398,11 @@ void Library::loadStarred() {
       const auto found = api->starred();
       for (const Album& a : found.albums) albums.append(albumMap(a));
       for (const Song& s : found.songs) songs.append(trackMap(s, {}));
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       // Leave the lists empty.
     }
-    Session::onMain([this, albums, songs] {
+    deliver(api, [this, albums, songs] {
       absorbStars(albums);
       absorbStars(songs);
       emit starredLoaded({{"albums", albums}, {"songs", songs}});
@@ -366,10 +429,11 @@ void Library::refreshArtists() {
           });
         }
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       return;  // keep what we have
     }
-    Session::onMain([this, list] {
+    deliver(api, [this, list] {
       if (artists_ == list) return;
       artists_ = list;
       emit artistsChanged();
@@ -389,12 +453,13 @@ void Library::loadArtist(const QString& id) {
       QVariantList albums;
       for (const Album& a : artist.albums) albums.append(albumMap(a));
       const QVariantMap map{{"id", id}, {"name", qs(artist.name)}, {"albums", albums}};
-      Session::onMain([this, id, map, albums] {
+      deliver(api, [this, id, map, albums] {
         absorbStars(albums);
         emit artistLoaded(id, map);
       });
-    } catch (const std::exception&) {
-      Session::onMain([this, id] { emit artistLoaded(id, {{"id", id}, {"name", QString()}, {"albums", QVariantList()}}); });
+    } catch (const std::exception& e) {
+      report(e);
+      deliver(api, [this, id] { emit artistLoaded(id, {{"id", id}, {"name", QString()}, {"albums", QVariantList()}}); });
     }
   });
 }
@@ -425,10 +490,11 @@ void Library::refreshPlaylists() {
     QVariantList list;
     try {
       for (const Playlist& p : api->playlists()) list.append(playlistMap(p));
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       return;
     }
-    Session::onMain([this, list] {
+    deliver(api, [this, list] {
       if (playlists_ == list) return;
       playlists_ = list;
       emit playlistsChanged();
@@ -449,11 +515,12 @@ void Library::loadPlaylist(const QString& id) {
       QVariantList tracks;
       for (const Song& s : p.songs) tracks.append(trackMap(s, {}));
       map["tracks"] = tracks;
-      Session::onMain([this, id, map, tracks] {
+      deliver(api, [this, id, map, tracks] {
         absorbStars(tracks);
         emit playlistLoaded(id, map);
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       // The page keeps what it shows.
     }
   });
@@ -466,11 +533,12 @@ void Library::createPlaylist(const QString& name, const QStringList& songIds) {
     try {
       const auto created = api->create_playlist(name.trimmed().toStdString(), toStd(songIds));
       const QString id = qs(created.id);
-      Session::onMain([this, id, name] {
+      deliver(api, [this, id, name] {
         refreshPlaylists();
         emit playlistCreated(id, name.trimmed());
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
   });
 }
@@ -483,11 +551,12 @@ void Library::addToPlaylist(const QString& id, const QStringList& songIds) {
       PlaylistUpdate update;
       update.add_song_ids = toStd(songIds);
       api->update_playlist(id.toStdString(), update);
-      Session::onMain([this, id] {
+      deliver(api, [this, id] {
         refreshPlaylists();
         emit playlistChanged(id);
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
   });
 }
@@ -500,11 +569,12 @@ void Library::removeFromPlaylist(const QString& id, const QVariantList& indexes)
       PlaylistUpdate update;
       for (const QVariant& index : indexes) update.remove_indexes.push_back(index.toInt());
       api->update_playlist(id.toStdString(), update);
-      Session::onMain([this, id] {
+      deliver(api, [this, id] {
         refreshPlaylists();
         emit playlistChanged(id);
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
   });
 }
@@ -517,11 +587,12 @@ void Library::renamePlaylist(const QString& id, const QString& name) {
       PlaylistUpdate update;
       update.name = name.trimmed().toStdString();
       api->update_playlist(id.toStdString(), update);
-      Session::onMain([this, id] {
+      deliver(api, [this, id] {
         refreshPlaylists();
         emit playlistChanged(id);
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
   });
 }
@@ -532,11 +603,12 @@ void Library::deletePlaylist(const QString& id) {
   Session::async([this, api, id] {
     try {
       api->delete_playlist(id.toStdString());
-      Session::onMain([this, id] {
+      deliver(api, [this, id] {
         refreshPlaylists();
         emit playlistDeleted(id);
       });
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
   });
 }
@@ -596,10 +668,11 @@ void Library::loadWorks() {
         for (const Title& t : page.items) list.append(workMap(t));
         if (page.items.empty() || offset + step >= page.total) break;
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
       // Leave what was read; the page shows it, or that there is nothing.
     }
-    Session::onMain([this, list] { emit worksLoaded(list); });
+    deliver(api, [this, list] { emit worksLoaded(list); });
   });
 }
 
@@ -617,11 +690,12 @@ void Library::loadWork(const QString& id) {
       map = workMap(detail.title);
       for (const Album& a : detail.albums) albums.append(albumMap(a));
       for (const Song& s : detail.songs) songs.append(trackMap(s, {}));
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
     map["albums"] = albums;
     map["songs"] = songs;
-    Session::onMain([this, id, map, albums, songs] {
+    deliver(api, [this, id, map, albums, songs] {
       absorbStars(albums);
       absorbStars(songs);
       emit workLoaded(id, map);
@@ -645,9 +719,10 @@ void Library::loadCompositions() {
           list.append(QVariantMap{{"id", qs(c.id)}, {"name", qs(c.name)}, {"composers", names(c.composers)}});
         if (page.items.empty() || offset + step >= page.total) break;
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
-    Session::onMain([this, list] { emit compositionsLoaded(list); });
+    deliver(api, [this, list] { emit compositionsLoaded(list); });
   });
 }
 
@@ -666,10 +741,11 @@ void Library::loadComposition(const QString& id) {
       map["composers"] = names(detail.composition.composers);
       for (const ArrangementSongs& group : detail.arrangements)
         for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
     map["songs"] = songs;
-    Session::onMain([this, id, map, songs] {
+    deliver(api, [this, id, map, songs] {
       absorbStars(songs);
       emit compositionLoaded(id, map);
     });
@@ -704,11 +780,12 @@ void Library::loadVersions(const QString& songId) {
                                           {"relation", relationLabel(item.relation)}});
         }
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
     map["songs"] = songs;
     map["compositions"] = compositions;
-    Session::onMain([this, songId, map, songs] {
+    deliver(api, [this, songId, map, songs] {
       absorbStars(songs);
       emit versionsLoaded(songId, map);
     });
@@ -734,9 +811,10 @@ void Library::loadFolders() {
             {"childCount", f.child_count},
         });
       }
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
-    Session::onMain([this, list] { emit foldersLoaded(list); });
+    deliver(api, [this, list] { emit foldersLoaded(list); });
   });
 }
 
@@ -753,10 +831,11 @@ void Library::loadFolder(const QString& id) {
       const auto detail = api->folder(id.toStdString());
       map["name"] = qs(detail.folder.name);
       for (const Album& a : detail.albums) albums.append(albumMap(a));
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+      report(e);
     }
     map["albums"] = albums;
-    Session::onMain([this, id, map, albums] {
+    deliver(api, [this, id, map, albums] {
       absorbStars(albums);
       emit folderLoaded(id, map);
     });
@@ -844,7 +923,7 @@ void Library::loadGraph(const QString& seed, const QString& mode) {
     }
     map["nodes"] = nodes;
     map["edges"] = edges;
-    Session::onMain([this, seed, mode, map, songs] {
+    deliver(api, [this, seed, mode, map, songs] {
       absorbStars(songs);
       emit graphLoaded(seed, mode, map);
     });

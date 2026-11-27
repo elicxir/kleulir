@@ -153,8 +153,9 @@ void MpvBackend::fail(const QString& text) {
   const bool wasPlaying = loaded_;
   loaded_ = false;
   hasNext_ = false;
-  emit statusChanged();
+  // failed() first: on statusChanged Audio replaces this backend and stops listening.
   if (wasPlaying) emit failed(text);
+  emit statusChanged();
 }
 
 void MpvBackend::tryConnect() {

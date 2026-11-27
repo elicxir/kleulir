@@ -70,8 +70,7 @@ WinRtBackend::WinRtBackend(QObject* parent) : AudioBackend(parent), impl_(std::m
 
     impl_->opened = player.MediaOpened(auto_revoke, [this](MediaPlayer const& p, IInspectable const&) {
       // A start position only sticks once the media is open.
-      const double start = pendingStart_;
-      pendingStart_ = 0;
+      const double start = pendingStart_.exchange(0);
       if (start > 0.5) p.PlaybackSession().Position(toSpan(start));
     });
 

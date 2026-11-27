@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QJSEngine>
+#include <QMutexLocker>
 #include <QSettings>
 #include <QSysInfo>
 #include <QThreadPool>
@@ -21,11 +22,28 @@ QString normalizedUrl(QString url) {
   return url;
 }
 
-Options optionsFor(const QString& url, const QString& key = {}) {
+// What is kept in the Credential Manager for a plain OpenSubsonic server, which has
+// no API keys: the Subsonic token and its salt (not the password), marked like this.
+const QLatin1String kTokenMark("subsonic-token:");
+
+QString tokenSecret(const eos::client::TokenLogin& login) {
+  return kTokenMark + QString::fromStdString(login.salt) + QLatin1Char(':') + QString::fromStdString(login.token);
+}
+
+// `secret` is an eos API key, or a token as tokenSecret() writes it.
+Options optionsFor(const QString& url, const QString& secret = {}, const QString& username = {}) {
   Options o;
   o.base_url = url.toStdString();
-  o.api_key = key.toStdString();
   o.client_name = "kleulir";
+  if (secret.startsWith(kTokenMark)) {
+    const QString rest = secret.mid(kTokenMark.size());
+    const qsizetype colon = rest.indexOf(QLatin1Char(':'));
+    o.username = username.toStdString();
+    o.salt = rest.left(colon).toStdString();
+    o.token = rest.mid(colon + 1).toStdString();
+  } else {
+    o.api_key = secret.toStdString();
+  }
   return o;
 }
 
@@ -50,11 +68,41 @@ Session* Session::create(QQmlEngine*, QJSEngine*) {
 }
 
 void Session::async(std::function<void()> work) {
-  QThreadPool::globalInstance()->start(std::move(work));
+  // Never deleted: Qt waits for the global pool when the application object goes
+  // away, and a request to a server that does not answer would hold the exit up
+  // for its whole timeout.
+  static QThreadPool* const pool = [] {
+    auto* p = new QThreadPool;
+    p->setMaxThreadCount(8);
+    return p;
+  }();
+  pool->start(std::move(work));
 }
 
 void Session::onMain(std::function<void()> done) {
-  QMetaObject::invokeMethod(QCoreApplication::instance(), std::move(done), Qt::QueuedConnection);
+  // Null once the app is quitting: the answer has nowhere to go.
+  if (QCoreApplication* app = QCoreApplication::instance())
+    QMetaObject::invokeMethod(app, std::move(done), Qt::QueuedConnection);
+}
+
+QString Session::serverUrl() const {
+  const QMutexLocker lock(&mutex_);
+  return serverUrl_;
+}
+
+std::shared_ptr<Api> Session::api() const {
+  const QMutexLocker lock(&mutex_);
+  return api_;
+}
+
+void Session::setApi(std::shared_ptr<Api> api) {
+  const QMutexLocker lock(&mutex_);
+  api_ = std::move(api);
+}
+
+void Session::setServerUrl(const QString& url) {
+  const QMutexLocker lock(&mutex_);
+  serverUrl_ = url;
 }
 
 void Session::set(State state, const QString& error) {
@@ -65,7 +113,7 @@ void Session::set(State state, const QString& error) {
 
 void Session::restore() {
   const QString url = QSettings().value("server/url").toString();
-  serverUrl_ = url;
+  setServerUrl(url);
   if (url.isEmpty()) return;
   if (auto saved = credentials::load(url)) {
     restoring_ = true;
@@ -88,39 +136,58 @@ void Session::login(const QString& serverUrl, const QString& username, const QSt
     set(LoggedOut, QStringLiteral("Enter the server address, username and password."));
     return;
   }
-  serverUrl_ = url;
+  setServerUrl(url);
   restoring_ = false;
+  const int attempt = ++attempt_;
   set(Connecting);
 
   const QString device = QStringLiteral("kleulir (%1)").arg(QSysInfo::machineHostName());
-  async([this, url, username, password, device] {
+  async([this, url, username, password, device, attempt] {
     try {
-      const auto result =
-          Api::login(optionsFor(url), username.toStdString(), password.toStdString(), device.toStdString());
-      const QString key = QString::fromStdString(result.key);
-      onMain([this, url, username, key] {
+      QString key, keyId;
+      try {
+        const auto result =
+            Api::login(optionsFor(url), username.toStdString(), password.toStdString(), device.toStdString());
+        key = QString::fromStdString(result.key);
+        keyId = QString::fromStdString(result.id);
+      } catch (const Error& e) {
+        // Nothing is there at all, or eos itself says no (wrong password, too many
+        // tries): an eos refusal comes with eos's own error body.
+        if (e.offline() || e.kind() == Error::Kind::ext) throw;
+        // Anything else (404, a web page, a redirect): not an eos server. Try it as
+        // a plain OpenSubsonic one.
+        key = tokenSecret(Api::token_login(optionsFor(url), username.toStdString(), password.toStdString()));
+      }
+      onMain([this, url, username, key, keyId, attempt] {
+        if (attempt != attempt_) return;  // logged out, or another login started, meanwhile
         QSettings().setValue("server/url", url);
+        QSettings().setValue("server/keyId", keyId);
         if (!credentials::save(url, {username, key}))
           qWarning("kleulir: could not store the API key in the Credential Manager");
         connectWithKey(url, username, key);
       });
     } catch (const Error& e) {
       const QString text = message(e);
-      onMain([this, text] { set(LoggedOut, text); });
+      onMain([this, text, attempt] {
+        if (attempt == attempt_) set(LoggedOut, text);
+      });
     } catch (const std::exception& e) {
       const QString text = QString::fromUtf8(e.what());
-      onMain([this, text] { set(LoggedOut, text); });
+      onMain([this, text, attempt] {
+        if (attempt == attempt_) set(LoggedOut, text);
+      });
     }
   });
 }
 
 void Session::connectWithKey(const QString& serverUrl, const QString& username, const QString& key) {
-  serverUrl_ = serverUrl;
+  setServerUrl(serverUrl);
   username_ = username;
+  const int attempt = ++attempt_;
   set(Connecting);
 
-  async([this, serverUrl, key] {
-    auto api = std::make_shared<Api>(optionsFor(serverUrl, key));
+  async([this, serverUrl, username, key, attempt] {
+    auto api = std::make_shared<Api>(optionsFor(serverUrl, key, username));
     try {
       const auto user = api->user();
       bool eos = true;
@@ -131,8 +198,9 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
         if (e.offline()) throw;
         eos = false;  // a plain OpenSubsonic server has no /ext
       }
-      onMain([this, api, user, eos, features] {
-        api_ = api;
+      onMain([this, api, user, eos, features, attempt] {
+        if (attempt != attempt_) return;
+        setApi(api);
         username_ = QString::fromStdString(user.username);
         admin_ = user.admin;
         eosFeatures_ = eos;
@@ -145,15 +213,17 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
     } catch (const Error& e) {
       const bool rejected = e.unauthorized();
       const QString text = rejected ? QStringLiteral("The saved key is no longer valid. Log in again.") : message(e);
-      onMain([this, serverUrl, rejected, text] {
-        api_.reset();
+      onMain([this, serverUrl, rejected, text, attempt] {
+        if (attempt != attempt_) return;
+        setApi(nullptr);
         restoring_ = false;
         if (rejected) credentials::remove(serverUrl);
         set(rejected ? LoggedOut : Offline, text);
       });
     } catch (const std::exception& e) {
       const QString text = QString::fromUtf8(e.what());
-      onMain([this, text] {
+      onMain([this, text, attempt] {
+        if (attempt != attempt_) return;
         restoring_ = false;
         set(Offline, text);
       });
@@ -162,8 +232,21 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
 }
 
 void Session::logout() {
+  ++attempt_;  // an answer still on its way must not log us back in
   if (!serverUrl_.isEmpty()) credentials::remove(serverUrl_);
-  api_.reset();
+  // The key is this device's own: tell the server it is no longer in use. Offline,
+  // it stays valid there until it is revoked from another device.
+  const QString keyId = QSettings().value("server/keyId").toString();
+  QSettings().remove("server/keyId");
+  if (const auto api = api_; api && !keyId.isEmpty()) {
+    async([api, keyId] {
+      try {
+        api->revoke_api_key(keyId.toStdString());
+      } catch (const std::exception&) {
+      }
+    });
+  }
+  setApi(nullptr);
   username_.clear();
   admin_ = false;
   eosFeatures_ = false;

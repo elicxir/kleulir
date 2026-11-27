@@ -11,7 +11,13 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include <exception>
 #include <functional>
+#include <memory>
+
+namespace eos::client {
+class Api;
+}
 
 class QQmlEngine;
 class QJSEngine;
@@ -40,6 +46,8 @@ class Library : public QObject {
   QString error() const { return error_; }
 
   Q_INVOKABLE void refresh();
+  // Albums, artists and playlists. Also runs by itself every 15 minutes.
+  Q_INVOKABLE void refreshAll();
   // Answers with albumLoaded: the album's fields plus `tracks`, each with id, title,
   // artist, duration, coverArt, work (the title it belongs to, or "") and estimated.
   Q_INVOKABLE void loadAlbum(const QString& id);
@@ -104,6 +112,8 @@ class Library : public QObject {
  signals:
   void albumsChanged();   // the list itself changed
   void statusChanged();   // loading or error changed
+  // A call to the server failed; `message` is for the user.
+  void problem(const QString& message);
   void albumLoaded(const QString& id, const QVariantMap& album);
   void albumFailed(const QString& id, const QString& message);
   void starsChanged();
@@ -130,6 +140,9 @@ class Library : public QObject {
   explicit Library(QObject* parent = nullptr);
 
   void loadCachedAlbums();
+  void reset();
+  void deliver(const std::shared_ptr<eos::client::Api>& api, std::function<void()> done);
+  void report(const std::exception& e);
   // Runs `call` once the session is ready (now, if it already is). For loads asked
   // for while the app is still reconnecting at start-up.
   void whenReady(std::function<void()> call);
@@ -147,5 +160,6 @@ class Library : public QObject {
   bool loading_ = false;
   bool fresh_ = false;  // the list came from the server this run, not from the cache
   QString error_;
+  QString server_;      // the server what is held here came from
   int generation_ = 0;  // drops answers that arrive after a logout or a newer refresh
 };

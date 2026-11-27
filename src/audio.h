@@ -8,6 +8,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
@@ -52,8 +53,10 @@ class Audio : public QObject {
 
   // Starts `trackId` from `startSeconds`. `paused` loads it without sounding.
   // `meta`: title, artist, album, coverArt (for the system display) and gain (the
-  // track's ReplayGain in dB, 0 when it has none).
-  Q_INVOKABLE void play(const QString& trackId, double startSeconds, bool paused, const QVariantMap& meta);
+  // track's ReplayGain in dB, 0 when it has none; only the Windows player needs it,
+  // mpv reads the file's tags).
+  // false when nothing was started: no session yet, or no working backend.
+  Q_INVOKABLE bool play(const QString& trackId, double startSeconds, bool paused, const QVariantMap& meta);
   // Names the track to continue with, without a gap, when the current one ends.
   // An empty id means the current track is the last.
   Q_INVOKABLE void setNext(const QString& trackId, const QVariantMap& meta);
@@ -72,7 +75,12 @@ class Audio : public QObject {
   void advanced(const QString& trackId);
   // The last track played to its end (nothing was queued after it).
   void finished(const QString& trackId);
+  // The track itself could not be played (the server is there): skip it.
   void failed(const QString& trackId, const QString& reason);
+  // Playback stopped for a reason that is not the track's: the server cannot be
+  // reached, or the backend went away. recovered() follows when playing can go on.
+  void interrupted(const QString& trackId);
+  void recovered();
   // Paused or resumed from outside the app (media keys, the system flyout).
   void pausedChanged(bool paused);
   void nextRequested();
@@ -84,6 +92,10 @@ class Audio : public QObject {
   QVariantMap withCoverUrl(const QVariantMap& meta) const;
   void applyOutputDevice();
   void countPlay(const QString& trackId);
+  void sendPlays();
+  void savePlays() const;
+  void onBackendFailed(const QString& reason);
+  void waitForServer(int delayMs);
   void showOnMediaKeys();
 
   AudioBackend* backend_ = nullptr;
@@ -97,4 +109,10 @@ class Audio : public QObject {
   QString replayGain_ = QStringLiteral("track");
   double preamp_ = 0;
   QString device_ = QStringLiteral("auto");
+  // Plays not yet reported to the server, oldest first: "<time in ms> <track id>".
+  // Kept on disk, so a play made while offline is counted once the server is back.
+  QStringList plays_;
+  bool sendingPlays_ = false;
+  bool backendLost_ = false;  // interrupted() was for a backend that went away
+  int waiting_ = 0;           // bumped to call off an earlier wait for the server
 };

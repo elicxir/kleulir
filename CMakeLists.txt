@@ -19,13 +19,12 @@ qt_add_executable(kleulir WIN32
   assets/kleulir.rc   # the icon of the .exe (assets/make_icon.py draws it)
 )
 
-# Singletons. Player and MockData stand in for libeos until it exists;
-# the pages only talk to these two, so swapping them for C++ types later
-# does not touch the screens.
+# Singletons. Player stands in for libeos' queue and controller until they exist;
+# the pages only talk to it, so swapping it for a C++ type later does not touch
+# the screens.
 set_source_files_properties(
   qml/Theme.qml
   qml/Player.qml
-  qml/MockData.qml
   qml/Nav.qml
   PROPERTIES QT_QML_SINGLETON_TYPE TRUE
 )
@@ -51,7 +50,6 @@ qt_add_qml_module(kleulir
     qml/Main.qml
     qml/Theme.qml
     qml/Player.qml
-    qml/MockData.qml
     qml/Sidebar.qml
     qml/PlayerBar.qml
     qml/QueuePanel.qml
