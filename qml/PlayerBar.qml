@@ -11,8 +11,6 @@ Rectangle {
     color: Theme.panel
     implicitHeight: 84
 
-    readonly property var device: MockData.devices.find(d => d.id === Player.playbackDeviceId)
-    readonly property bool remote: Player.playbackDeviceId !== "d1"
     readonly property bool starred: {
         Library.starRevision
         return Player.current ? Library.isStarred(Player.current.trackId) : false
@@ -211,47 +209,6 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
-            IconButton {
-                id: deviceButton
-                visible: Session.eosFeatures
-                glyph: "device"
-                tip: "Play on: " + (root.device ? root.device.name : "")
-                active: root.remote
-                onClicked: deviceMenu.open()
-
-                Menu {
-                    id: deviceMenu
-                    y: -implicitHeight - 6
-                    padding: 4
-                    background: Rectangle {
-                        implicitWidth: 220
-                        color: Theme.raised
-                        border.color: Theme.line
-                    }
-                    Repeater {
-                        model: MockData.devices
-                        delegate: MenuItem {
-                            id: deviceItem
-                            required property var modelData
-                            readonly property bool current: modelData.id === Player.playbackDeviceId
-                            enabled: modelData.online
-                            implicitHeight: 32
-                            onTriggered: Player.playbackDeviceId = modelData.id
-                            background: Rectangle {
-                                color: deviceItem.highlighted ? Theme.hover : "transparent"
-                            }
-                            contentItem: Text {
-                                text: deviceItem.modelData.name + (deviceItem.modelData.online ? "" : " (offline)")
-                                color: !deviceItem.enabled ? Theme.textFaint
-                                       : deviceItem.current ? Theme.accent : Theme.text
-                                font.pixelSize: Theme.fontBody
-                                leftPadding: Theme.gap
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
-                    }
-                }
-            }
             IconButton {
                 glyph: Player.muted || Player.volume === 0 ? "mute" : "volume"
                 tip: Player.muted ? "Unmute" : "Mute"

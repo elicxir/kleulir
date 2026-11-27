@@ -2,7 +2,9 @@
 
 #include <QCoreApplication>
 #include <QJSEngine>
+#include <QDateTime>
 #include <QSettings>
+#include <QTimer>
 
 #include "audiobackend.h"
 #include "mediakeys.h"
@@ -16,6 +18,17 @@ Audio::Audio(QObject* parent) : QObject(parent) {
   if (mode == "track" || mode == "album" || mode == "off") replayGain_ = mode;
   preamp_ = qBound(-15.0, settings.value("audio/preamp", 0.0).toDouble(), 15.0);
   device_ = settings.value("audio/device", device_).toString();
+  // Track ids only mean something to the server they came from.
+  if (settings.value("plays/server").toString() == Session::instance()->serverUrl())
+    plays_ = settings.value("plays/pending").toStringList();
+  connect(Session::instance(), &Session::changed, this, [this] {
+    if (Session::instance()->state() != Session::Ready) return;
+    if (QSettings().value("plays/server").toString() != Session::instance()->serverUrl()) {
+      plays_.clear();
+      savePlays();
+    }
+    sendPlays();
+  });
 
   // mpv when there is one (KLEULIR_AUDIO=windows skips it, for comparing the two).
   const QString mpv = qEnvironmentVariable("KLEULIR_AUDIO") == "windows" ? QString() : MpvBackend::findExecutable();
@@ -67,13 +80,7 @@ void Audio::useBackend(AudioBackend* backend) {
     if (keys_) keys_->setState(MediaKeys::Stopped);
     emit finished(id);
   });
-  connect(backend_, &AudioBackend::failed, this, [this](const QString& reason) {
-    const QString id = trackId_;
-    trackId_.clear();
-    nextId_.clear();
-    if (keys_) keys_->setState(MediaKeys::Stopped);
-    if (!id.isEmpty()) emit failed(id, reason);
-  });
+  connect(backend_, &AudioBackend::failed, this, &Audio::onBackendFailed);
   connect(backend_, &AudioBackend::statusChanged, this, [this] {
     // mpv went away while running: carry on with the Windows player.
     if (!backend_->ok() && backend_->name() == "mpv") {
@@ -84,6 +91,12 @@ void Audio::useBackend(AudioBackend* backend) {
       delete keys_;
       keys_ = nullptr;
       useBackend(new WinRtBackend(this));
+      emit statusChanged();
+      if (backendLost_) {
+        backendLost_ = false;
+        emit recovered();
+      }
+      return;
     }
     emit statusChanged();
   });
@@ -159,8 +172,9 @@ void Audio::applyOutputDevice() {
 
 QVariantMap Audio::withCoverUrl(const QVariantMap& meta) const {
   QVariantMap out = meta;
-  // mpv takes the gain from the file's tags itself. The Windows player is given
-  // the track's gain as a number (it has no album gain to go by).
+  // mpv takes the gain from the file's tags itself (track or album, with its own
+  // clipping guard) and ignores this. The Windows player, the fallback, cannot read
+  // tags: it is given the track's gain as a number.
   out["gain"] = replayGain_ == "off" ? 0.0 : meta.value("gain").toDouble() + preamp_;
   const QString cover = meta.value("coverArt").toString();
   const auto api = Session::instance()->api();
@@ -169,19 +183,118 @@ QVariantMap Audio::withCoverUrl(const QVariantMap& meta) const {
   return out;
 }
 
-// The playing device counts the play (docs/sync.md); the server does not.
+// Whether a track that stopped is at fault, or the way to it: only the first is
+// a reason to go on to the next track.
+void Audio::onBackendFailed(const QString& reason) {
+  const QString id = trackId_;
+  trackId_.clear();
+  nextId_.clear();
+  if (keys_) keys_->setState(MediaKeys::Stopped);
+  if (id.isEmpty()) return;
+
+  if (!backend_->ok()) {  // the backend went away; statusChanged replaces it
+    backendLost_ = true;
+    emit interrupted(id);
+    return;
+  }
+  const auto api = Session::instance()->api();
+  if (!api) {
+    emit interrupted(id);
+    return;  // Player resumes when the session is ready again
+  }
+  const int wait = ++waiting_;
+  Session::async([this, api, id, reason, wait] {
+    bool offline = false;
+    try {
+      api->ping();
+    } catch (const eos::client::Error& e) {
+      offline = e.offline();
+    } catch (const std::exception&) {
+    }
+    Session::onMain([this, id, reason, offline, wait] {
+      if (wait != waiting_) return;  // something else was started meanwhile
+      if (!offline) {
+        emit failed(id, reason);
+        return;
+      }
+      emit interrupted(id);
+      waitForServer(1000);
+    });
+  });
+}
+
+// Asks the server again after 1, 2, 4 ... at most 30 seconds, until it answers.
+void Audio::waitForServer(int delayMs) {
+  const int wait = waiting_;
+  QTimer::singleShot(delayMs, this, [this, delayMs, wait] {
+    const auto api = Session::instance()->api();
+    if (wait != waiting_ || !api) return;
+    Session::async([this, api, delayMs, wait] {
+      bool reached = true;
+      try {
+        api->ping();
+      } catch (const eos::client::Error& e) {
+        reached = !e.offline();
+      } catch (const std::exception&) {
+      }
+      Session::onMain([this, reached, delayMs, wait] {
+        if (wait != waiting_) return;
+        if (!reached) {
+          waitForServer(qMin(delayMs * 2, 30000));
+          return;
+        }
+        sendPlays();
+        emit recovered();
+      });
+    });
+  });
+}
+
+// The playing device counts the play (docs/sync.md); the server does not. A play
+// made while the server cannot be reached is kept and sent later with its time.
 void Audio::countPlay(const QString& trackId) {
   // A screenshot run is a test: it must not add to the play counts.
   if (trackId.isEmpty() || qEnvironmentVariableIsSet("KLEULIR_SCREENSHOT")) return;
-  if (auto api = Session::instance()->api()) {
-    Session::async([api, trackId] {
+  plays_.append(QString::number(QDateTime::currentMSecsSinceEpoch()) + QLatin1Char(' ') + trackId);
+  while (plays_.size() > 5000) plays_.removeFirst();
+  savePlays();
+  sendPlays();
+}
+
+void Audio::savePlays() const {
+  QSettings settings;
+  settings.setValue("plays/server", Session::instance()->serverUrl());
+  settings.setValue("plays/pending", plays_);
+}
+
+void Audio::sendPlays() {
+  const auto api = Session::instance()->api();
+  if (sendingPlays_ || plays_.isEmpty() || !api) return;
+  sendingPlays_ = true;
+  const QStringList plays = plays_;
+  Session::async([this, api, plays] {
+    int sent = 0;
+    for (const QString& play : plays) {
+      const qsizetype space = play.indexOf(QLatin1Char(' '));
       try {
-        api->scrobble(trackId.toStdString());
+        api->scrobble(play.mid(space + 1).toStdString(), play.left(space).toLongLong());
+      } catch (const eos::client::Error& e) {
+        if (e.offline()) break;  // keep it, and what follows, for later
+        // Refused (the track is gone, say): asking again would not help.
       } catch (const std::exception&) {
-        // Offline: the play is not counted. Queuing these for later is still to do.
+        break;
       }
+      ++sent;
+    }
+    Session::onMain([this, api, sent] {
+      sendingPlays_ = false;
+      if (Session::instance()->api() != api) return;
+      plays_ = plays_.mid(sent);
+      savePlays();
+      // Plays counted while these were on their way.
+      if (sent > 0) sendPlays();
     });
-  }
+  });
 }
 
 void Audio::showOnMediaKeys() {
@@ -190,16 +303,18 @@ void Audio::showOnMediaKeys() {
   keys_->setState(paused_ ? MediaKeys::Paused : MediaKeys::Playing);
 }
 
-void Audio::play(const QString& trackId, double startSeconds, bool paused, const QVariantMap& meta) {
+bool Audio::play(const QString& trackId, double startSeconds, bool paused, const QVariantMap& meta) {
   const auto api = Session::instance()->api();
-  if (!backend_->ok() || !api || trackId.isEmpty()) return;
+  if (!backend_->ok() || !api || trackId.isEmpty()) return false;
 
+  ++waiting_;  // a wait for the server, if one is on, is no longer what decides
   trackId_ = trackId;
   nextId_.clear();
   meta_ = withCoverUrl(meta);
   paused_ = paused;
   backend_->play(QString::fromStdString(api->stream_url(trackId.toStdString())), startSeconds, paused, meta_);
   showOnMediaKeys();
+  return true;
 }
 
 void Audio::setNext(const QString& trackId, const QVariantMap& meta) {
@@ -228,6 +343,7 @@ void Audio::seek(double seconds) {
 }
 
 void Audio::stop() {
+  ++waiting_;
   trackId_.clear();
   nextId_.clear();
   backend_->stop();

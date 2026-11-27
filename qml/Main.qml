@@ -355,6 +355,44 @@ ApplicationWindow {
         onClicked: mouse => mouse.button === Qt.BackButton ? Nav.back() : Nav.forward()
     }
 
+    // A call to the server failed: say so, briefly, instead of showing nothing.
+    Rectangle {
+        id: toast
+        property string message: ""
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 100
+        width: Math.min(toastText.implicitWidth + 32, parent.width - 80)
+        height: toastText.implicitHeight + 20
+        radius: 6
+        color: Theme.raised
+        border.color: Theme.line
+        opacity: toastTimer.running ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+
+        Text {
+            id: toastText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, toast.parent.width - 112)
+            text: toast.message
+            color: Theme.text
+            font.pixelSize: Theme.fontBody
+            elide: Text.ElideRight
+        }
+        Timer {
+            id: toastTimer
+            interval: 4000
+        }
+        Connections {
+            target: Library
+            function onProblem(message) {
+                toast.message = message
+                toastTimer.restart()
+            }
+        }
+    }
+
     LoginPage {
         anchors.fill: parent
         // Not while reconnecting with a saved key: that shows the cached library.

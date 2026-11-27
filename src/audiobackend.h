@@ -27,7 +27,8 @@ class AudioBackend : public QObject {
 
   virtual double position() const = 0;  // seconds
 
-  // `meta`: title, artist, album, coverUrl, gain (ReplayGain in dB, 0 when none).
+  // `meta`: title, artist, album, coverUrl, and gain: the volume change in dB for a
+  // backend that cannot read ReplayGain tags itself (mpv can, and ignores it).
   virtual void play(const QString& url, double startSeconds, bool paused, const QVariantMap& meta) = 0;
   // An empty url means the current track is the last.
   virtual void setNext(const QString& url, const QVariantMap& meta) = 0;

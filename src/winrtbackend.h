@@ -47,7 +47,7 @@ class WinRtBackend : public AudioBackend {
   bool hasNext_ = false;
   std::atomic<int> serial_{0};  // bumped per play(); drops events of a replaced list
   double position_ = 0;
-  double pendingStart_ = 0;
+  std::atomic<double> pendingStart_{0};  // read by MediaOpened, on the player's thread
   int volume_ = 80;
   bool muted_ = false;
   double gainDb_ = 0;

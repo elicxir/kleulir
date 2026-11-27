@@ -104,7 +104,10 @@ Rectangle {
             Layout.fillWidth: true
             visible: root.offline
             text: "Use a different server"
-            onClicked: Session.logout()
+            onClicked: {
+                Player.clear()
+                Session.logout()
+            }
         }
 
         Text {

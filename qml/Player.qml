@@ -3,7 +3,8 @@ import QtCore
 import QtQuick
 import Kleulir
 
-// The queue and the transport. Sound comes from Audio (the Windows media player).
+// The queue and the transport. Sound comes from Audio (mpv, or the Windows media
+// player when there is no mpv).
 // The queue is replaceable as a whole (replaceQueue) because it will later be
 // overwritten by the server's `state` message.
 QtObject {
@@ -14,7 +15,6 @@ QtObject {
     property real volume: 0.8          // 0..1
     property bool muted: false
     property int currentIndex: -1
-    property string playbackDeviceId: "d1"
     property int revision: 0           // bumped on every queue change
 
     // Shuffle reorders what is still to come; turning it off puts the queue back
@@ -75,6 +75,8 @@ QtObject {
     // Starts the current queue entry from the top.
     function start() {
         resumePending = false
+        stalled = false
+        retriedAt = -1
         position = 0
         if (currentIndex < 0 || currentIndex >= queue.count) {
             playing = false
@@ -83,10 +85,32 @@ QtObject {
         }
         playing = true
         const e = queue.get(currentIndex)
-        Audio.play(e.trackId, 0, false, {
+        if (!Audio.play(e.trackId, 0, false, {
             title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
-        })
+        })) {
+            hold()
+            return
+        }
         syncNext()
+    }
+
+    // ---- interruptions -----------------------------------------------------
+
+    // Nothing can be played right now (no session yet, the server out of reach,
+    // the audio backend gone): the track waits at its position instead of being
+    // skipped. It goes on by itself when that is over, or on Play.
+    property bool stalled: false
+    // Tracks in a row that the server would not play. After a few, stop instead
+    // of running through the whole queue.
+    property int failures: 0
+    // Where a track that ended early was last started again, so one whose length
+    // is simply wrong is not restarted for ever.
+    property real retriedAt: -1
+
+    function hold() {
+        playing = false
+        resumePending = true
+        stalled = true
     }
 
     // ---- gapless ----------------------------------------------------------
@@ -307,6 +331,8 @@ QtObject {
         currentIndex = -1
         position = 0
         playing = false
+        resumePending = false
+        stalled = false
         ++revision
         Audio.stop()
     }
@@ -327,7 +353,7 @@ QtObject {
         if (!restored)
             return
         App.writeState("queue", JSON.stringify({
-            entries: entries(), index: currentIndex, position: Math.floor(position),
+            server: Session.serverUrl, entries: entries(), index: currentIndex, position: Math.floor(position),
             shuffle: shuffle, unshuffled: unshuffled
         }))
     }
@@ -337,13 +363,17 @@ QtObject {
     // loads the track at the position it had.
     function resume() {
         resumePending = false
+        stalled = false
         if (currentIndex < 0 || currentIndex >= queue.count)
             return
         const e = queue.get(currentIndex)
         playing = true
-        Audio.play(e.trackId, position, false, {
+        if (!Audio.play(e.trackId, position, false, {
             title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
-        })
+        })) {
+            hold()
+            return
+        }
         syncNext()
     }
 
@@ -352,7 +382,9 @@ QtObject {
         Audio.setMuted(muted)
         try {
             const state = JSON.parse(App.readState("queue") || "null")
-            if (state && state.entries && state.entries.length > 0) {
+            // Track ids only mean something to the server they came from.
+            const here = state && (!state.server || state.server === Session.serverUrl)
+            if (here && state.entries && state.entries.length > 0) {
                 setEntries(state.entries)
                 nextUid = state.entries.reduce((top, e) => Math.max(top, e.uid || 0), 0) + 1
                 currentIndex = Math.max(0, Math.min(state.index, state.entries.length - 1))
@@ -365,7 +397,25 @@ QtObject {
         } catch (error) {
             console.warn("saved queue could not be read:", error)
         }
+        queueServer = Session.serverUrl
         restored = true
+    }
+
+    // The server the queue's tracks are on.
+    property string queueServer: ""
+    property Connections sessionEvents: Connections {
+        target: Session
+        function onChanged() {
+            if (Session.state !== Session.Ready)
+                return
+            if (Session.serverUrl !== root.queueServer) {
+                if (root.queueServer !== "")
+                    root.clear()
+                root.queueServer = Session.serverUrl
+            } else if (root.stalled) {
+                root.resume()     // asked to play before the session was ready
+            }
+        }
     }
 
     onRevisionChanged: {
@@ -401,6 +451,8 @@ QtObject {
             // goes a second or two past the end before it changes track. Shown
             // as is, the clock would read past the track's length; hold it there.
             root.position = root.duration > 0 ? Math.min(Audio.position, root.duration) : Audio.position
+            if (Audio.position > 2)
+                root.failures = 0     // this one plays
         }
         // Media keys and the system flyout.
         function onPausedChanged(paused) {
@@ -424,15 +476,42 @@ QtObject {
         function onFinished(trackId) {
             if (!root.current || root.current.trackId !== trackId)
                 return
+            // Ended well before its end: the stream broke off. Go on from there
+            // (once per place; a second early end there is taken as the end).
+            if (root.duration > 0 && root.position < root.duration - 5
+                    && Math.abs(root.position - root.retriedAt) > 1) {
+                root.retriedAt = root.position
+                root.resume()
+                return
+            }
             if (root.repeat === "one")
                 root.start()
             else
                 root.next()
         }
+        // This track cannot be played, though the server is there: go on to the
+        // next, but not through the whole queue (or round and round with repeat).
         function onFailed(trackId, reason) {
             console.warn("playback failed:", reason)
+            if (!root.current || root.current.trackId !== trackId)
+                return
+            if (++root.failures >= 3) {
+                root.failures = 0
+                root.playing = false
+                root.resumePending = true
+                Audio.stop()
+                return
+            }
+            root.next()
+        }
+        // Not the track's fault: keep the place and wait.
+        function onInterrupted(trackId) {
             if (root.current && root.current.trackId === trackId)
-                root.next()
+                root.hold()
+        }
+        function onRecovered() {
+            if (root.stalled)
+                root.resume()
         }
     }
 }
