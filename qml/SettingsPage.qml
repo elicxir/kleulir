@@ -511,10 +511,9 @@ Flickable {
                 onToggled: App.closeToTray = checked
             }
             Toggle {
-                text: "Start hidden in the tray"
-                enabled: App.closeToTray
-                checked: App.startInTray
-                onToggled: App.startInTray = checked
+                text: "Start kleulir with Windows" + (App.closeToTray ? ", hidden in the tray" : "")
+                checked: App.startWithWindows
+                onToggled: App.startWithWindows = checked
             }
         }
 

@@ -10,8 +10,10 @@ ApplicationWindow {
     height: 800
     minimumWidth: 960
     minimumHeight: 600
+    // Starting kleulir opens its window. Only `--hidden` (how it is started with
+    // Windows) keeps it in the tray, and only when the tray is in use at all.
     // The screenshot hook always wants the window.
-    visible: !(App.closeToTray && App.startInTray)
+    visible: !(App.closeToTray && Qt.application.arguments.indexOf("--hidden") >= 0)
              || Qt.application.arguments.some(a => a.startsWith("--demo-"))
     title: Player.current ? Player.current.title + " — kleulir" : "kleulir"
     color: Theme.line

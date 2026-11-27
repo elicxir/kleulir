@@ -22,7 +22,9 @@ class App : public QObject {
   // Closing the window hides it to the tray instead of quitting.
   Q_PROPERTY(bool closeToTray READ closeToTray WRITE setCloseToTray NOTIFY changed)
   // Start with the window hidden (only with closeToTray).
-  Q_PROPERTY(bool startInTray READ startInTray WRITE setStartInTray NOTIFY changed)
+  // Start with Windows, hidden in the tray (an entry under the user's Run key that
+  // launches kleulir with --hidden). Launched any other way, the window opens.
+  Q_PROPERTY(bool startWithWindows READ startWithWindows WRITE setStartWithWindows NOTIFY changed)
 
  public:
   explicit App(QObject* parent = nullptr);
@@ -45,8 +47,8 @@ class App : public QObject {
   bool restartRequired() const;
   bool closeToTray() const;
   void setCloseToTray(bool on);
-  bool startInTray() const;
-  void setStartInTray(bool on);
+  bool startWithWindows() const;
+  void setStartWithWindows(bool on);
 
   Q_INVOKABLE void restart();
 

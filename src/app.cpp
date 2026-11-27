@@ -132,11 +132,33 @@ void App::setCloseToTray(bool on) {
   emit changed();
 }
 
-bool App::startInTray() const { return settings().value("tray/startHidden", false).toBool(); }
+namespace {
 
-void App::setStartInTray(bool on) {
-  if (on == startInTray()) return;
-  settings().setValue("tray/startHidden", on);
+QSettings runKey() {
+  return QSettings(QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+                   QSettings::NativeFormat);
+}
+
+// What Windows runs at sign-in: this kleulir.exe, staying in the tray.
+QString runCommand() {
+  return QStringLiteral("\"%1\" --hidden").arg(QDir::toNativeSeparators(QCoreApplication::applicationFilePath()));
+}
+
+}  // namespace
+
+// On only when the entry starts this very kleulir.exe: after the folder has been
+// moved the old entry is stale, and turning the option on again rewrites it.
+bool App::startWithWindows() const {
+  return runKey().value(QStringLiteral("kleulir")).toString().compare(runCommand(), Qt::CaseInsensitive) == 0;
+}
+
+void App::setStartWithWindows(bool on) {
+  if (on == startWithWindows()) return;
+  QSettings key = runKey();
+  if (on)
+    key.setValue(QStringLiteral("kleulir"), runCommand());
+  else
+    key.remove(QStringLiteral("kleulir"));
   emit changed();
 }
 
