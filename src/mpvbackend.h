@@ -40,6 +40,9 @@ class MpvBackend : public AudioBackend {
   void stop() override;
   void setVolume(int percent) override;
   void setMuted(bool muted) override;
+  void setReplayGain(const QString& mode, double preampDb) override;
+  QVariantList outputDevices() const override { return devices_; }
+  void setOutputDevice(const QString& id) override;
 
  private:
   void tryConnect();
@@ -62,4 +65,5 @@ class MpvBackend : public AudioBackend {
   int connectTries_ = 0;
   int volume_ = 80;
   bool muted_ = false;
+  QVariantList devices_;
 };

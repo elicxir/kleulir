@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QJSEngine>
+#include <QSettings>
 
 #include "audiobackend.h"
 #include "mediakeys.h"
@@ -10,6 +11,12 @@
 #include "winrtbackend.h"
 
 Audio::Audio(QObject* parent) : QObject(parent) {
+  const QSettings settings;
+  const QString mode = settings.value("audio/replayGain", replayGain_).toString();
+  if (mode == "track" || mode == "album" || mode == "off") replayGain_ = mode;
+  preamp_ = qBound(-15.0, settings.value("audio/preamp", 0.0).toDouble(), 15.0);
+  device_ = settings.value("audio/device", device_).toString();
+
   // mpv when there is one (KLEULIR_AUDIO=windows skips it, for comparing the two).
   const QString mpv = qEnvironmentVariable("KLEULIR_AUDIO") == "windows" ? QString() : MpvBackend::findExecutable();
   if (!mpv.isEmpty())
@@ -32,6 +39,13 @@ void Audio::useBackend(AudioBackend* backend) {
   backend_ = backend;
   backend_->setVolume(volume_);
   backend_->setMuted(muted_);
+  backend_->setReplayGain(replayGain_, preamp_);
+  applyOutputDevice();
+  connect(backend_, &AudioBackend::outputDevicesChanged, this, [this] {
+    applyOutputDevice();
+    emit outputDevicesChanged();
+  });
+  emit outputDevicesChanged();
 
   connect(backend_, &AudioBackend::positionChanged, this, &Audio::positionChanged);
   connect(backend_, &AudioBackend::advanced, this, [this] {
@@ -104,8 +118,50 @@ QString Audio::problem() const { return backend_->problem(); }
 QString Audio::backendName() const { return backend_->name(); }
 double Audio::position() const { return backend_->position(); }
 
+QVariantList Audio::outputDevices() const { return backend_->outputDevices(); }
+
+void Audio::setReplayGain(const QString& mode) {
+  if (mode == replayGain_ || (mode != "track" && mode != "album" && mode != "off")) return;
+  replayGain_ = mode;
+  QSettings().setValue("audio/replayGain", mode);
+  backend_->setReplayGain(replayGain_, preamp_);
+  emit settingsChanged();
+}
+
+void Audio::setPreamp(double db) {
+  db = qBound(-15.0, db, 15.0);
+  if (qFuzzyCompare(db + 100, preamp_ + 100)) return;
+  preamp_ = db;
+  QSettings().setValue("audio/preamp", db);
+  backend_->setReplayGain(replayGain_, preamp_);
+  emit settingsChanged();
+}
+
+void Audio::setOutputDevice(const QString& id) {
+  if (id == device_ || id.isEmpty()) return;
+  device_ = id;
+  QSettings().setValue("audio/device", id);
+  applyOutputDevice();
+  emit settingsChanged();
+}
+
+// The chosen device when it is there, the system default while it is not: asking
+// the backend for a device that is gone would leave playback silent.
+void Audio::applyOutputDevice() {
+  const QVariantList devices = backend_->outputDevices();
+  bool present = device_ == "auto";
+  for (const QVariant& device : devices) present = present || device.toMap().value("id") == device_;
+  if (present)
+    backend_->setOutputDevice(device_);
+  else if (!devices.isEmpty())
+    backend_->setOutputDevice(QStringLiteral("auto"));
+}
+
 QVariantMap Audio::withCoverUrl(const QVariantMap& meta) const {
   QVariantMap out = meta;
+  // mpv takes the gain from the file's tags itself. The Windows player is given
+  // the track's gain as a number (it has no album gain to go by).
+  out["gain"] = replayGain_ == "off" ? 0.0 : meta.value("gain").toDouble() + preamp_;
   const QString cover = meta.value("coverArt").toString();
   const auto api = Session::instance()->api();
   if (api && !cover.isEmpty())

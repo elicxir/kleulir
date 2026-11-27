@@ -231,6 +231,185 @@ Flickable {
 
         Divider {}
 
+        // ---- Playback --------------------------------------------------------
+        ColumnLayout {
+            id: playback
+            spacing: 10
+            readonly property bool mpv: Audio.backend === "mpv"
+
+            SectionTitle { text: "Playback" }
+
+            GridLayout {
+                columns: 2
+                columnSpacing: 24
+                rowSpacing: 12
+                Layout.topMargin: 4
+
+                Text { text: "Volume levelling"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
+                Segmented {
+                    options: [
+                        { key: "track", label: "Per track" },
+                        { key: "album", label: "Per album" },
+                        { key: "off", label: "Off" }
+                    ]
+                    current: Audio.replayGain
+                    onPicked: key => Audio.replayGain = key
+                }
+
+                Text {
+                    text: "Pre-amp"
+                    color: Audio.replayGain === "off" ? Theme.textFaint : Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
+                RowLayout {
+                    spacing: 12
+                    enabled: Audio.replayGain !== "off"
+                    opacity: enabled ? 1 : 0.4
+
+                    Slider {
+                        id: preamp
+                        implicitWidth: 220
+                        implicitHeight: 24
+                        from: -12
+                        to: 12
+                        stepSize: 1
+                        snapMode: Slider.SnapAlways
+                        value: Audio.preamp
+                        onMoved: Audio.preamp = value
+                        background: Rectangle {
+                            x: preamp.leftPadding
+                            y: preamp.topPadding + (preamp.availableHeight - height) / 2
+                            width: preamp.availableWidth
+                            height: 3
+                            color: Theme.hover
+                            // Filled from the middle: 0 dB is the neutral point.
+                            Rectangle {
+                                readonly property real zero: parent.width / 2
+                                readonly property real at: preamp.visualPosition * parent.width
+                                x: Math.min(zero, at)
+                                width: Math.abs(at - zero)
+                                height: parent.height
+                                color: Theme.text
+                            }
+                        }
+                        handle: Rectangle {
+                            x: preamp.leftPadding + preamp.visualPosition * (preamp.availableWidth - width)
+                            y: preamp.topPadding + (preamp.availableHeight - height) / 2
+                            width: 10
+                            height: 16
+                            color: Theme.text
+                        }
+                    }
+                    Text {
+                        text: (Audio.preamp > 0 ? "+" : "") + Audio.preamp.toFixed(0) + " dB"
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody
+                        font.features: { "tnum": 1 }
+                        Layout.preferredWidth: 48
+                    }
+                    IconButton {
+                        text: "Reset"
+                        visible: Audio.preamp !== 0
+                        onClicked: Audio.preamp = 0
+                    }
+                }
+
+                Text {
+                    text: "Output device"
+                    color: playback.mpv ? Theme.textDim : Theme.textFaint
+                    font.pixelSize: Theme.fontBody
+                }
+                ComboBox {
+                    id: deviceBox
+                    // The chosen device stays listed while it is unplugged.
+                    readonly property bool missing: Audio.outputDevice !== "auto"
+                                                    && !Audio.outputDevices.some(d => d.id === Audio.outputDevice)
+                    implicitWidth: 380
+                    implicitHeight: 32
+                    enabled: playback.mpv
+                    opacity: enabled ? 1 : 0.4
+                    textRole: "name"
+                    valueRole: "id"
+                    model: [{ id: "auto", name: "System default" }]
+                        .concat(Audio.outputDevices)
+                        .concat(missing ? [{ id: Audio.outputDevice, name: "Not connected (using system default)" }] : [])
+                    currentIndex: Math.max(0, model.findIndex(d => d.id === Audio.outputDevice))
+                    onActivated: index => Audio.outputDevice = model[index].id
+                    font.pixelSize: Theme.fontBody
+
+                    // `--demo-devices`: show the list, for a screenshot run.
+                    Timer {
+                        interval: 2500
+                        running: Qt.application.arguments.indexOf("--demo-devices") >= 0
+                        onTriggered: deviceBox.popup.open()
+                    }
+
+                    background: Rectangle {
+                        color: Theme.raised
+                        border.color: deviceBox.activeFocus || deviceBox.popup.visible ? Theme.accent : Theme.line
+                    }
+                    contentItem: Text {
+                        leftPadding: 10
+                        rightPadding: 28
+                        text: deviceBox.displayText
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    indicator: Icon {
+                        x: deviceBox.width - width - 8
+                        y: (deviceBox.height - height) / 2
+                        name: "down"
+                        size: 16
+                        color: Theme.textDim
+                    }
+                    delegate: ItemDelegate {
+                        id: deviceItem
+                        required property var modelData
+                        required property int index
+                        width: deviceBox.width
+                        implicitHeight: 30
+                        highlighted: deviceBox.highlightedIndex === index
+                        background: Rectangle { color: deviceItem.highlighted ? Theme.hover : "transparent" }
+                        contentItem: Text {
+                            leftPadding: 4
+                            text: deviceItem.modelData.name
+                            color: deviceItem.index === deviceBox.currentIndex ? Theme.accent : Theme.text
+                            font.pixelSize: Theme.fontBody
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+                    }
+                    popup: Popup {
+                        y: deviceBox.height
+                        width: deviceBox.width
+                        implicitHeight: Math.min(contentItem.implicitHeight + 2, 320)
+                        padding: 1
+                        contentItem: ListView {
+                            clip: true
+                            implicitHeight: contentHeight
+                            model: deviceBox.popup.visible ? deviceBox.delegateModel : null
+                            currentIndex: deviceBox.highlightedIndex
+                            ScrollBar.vertical: ScrollBar {}
+                        }
+                        background: Rectangle {
+                            color: Theme.raised
+                            border.color: Theme.line
+                        }
+                    }
+                }
+            }
+
+            Hint {
+                text: playback.mpv
+                      ? "Levelling uses the ReplayGain values stored in the files, so tracks and albums play at a similar loudness."
+                      : "mpv was not found, so the Windows media player is used: it cannot choose a device, and levels per track only."
+            }
+        }
+
+        Divider {}
+
         // ---- Accent ----------------------------------------------------------
         ColumnLayout {
             spacing: 10

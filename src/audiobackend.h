@@ -37,7 +37,16 @@ class AudioBackend : public QObject {
   virtual void setVolume(int percent) = 0;  // 0..100
   virtual void setMuted(bool muted) = 0;
 
+  // The rest is optional: a backend that cannot do it ignores the call.
+  // `mode`: "track", "album" or "off"; `preampDb` is added to the gain.
+  virtual void setReplayGain(const QString& /*mode*/, double /*preampDb*/) {}
+  // The devices sound can go to, each {id, name}; without the system default.
+  virtual QVariantList outputDevices() const { return {}; }
+  // "auto" follows the system default.
+  virtual void setOutputDevice(const QString& /*id*/) {}
+
  signals:
+  void outputDevicesChanged();
   void positionChanged();
   // The current track ended and the one given to setNext() is now playing.
   void advanced();

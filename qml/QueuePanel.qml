@@ -101,6 +101,59 @@ Rectangle {
             model: Player.queue
             ScrollBar.vertical: ScrollBar {}
 
+            // Dragging a row: nothing moves until it is dropped; a line shows
+            // where it would go. dropAt is the gap before that row (0..count).
+            readonly property int rowHeight: 52
+            property int dragFrom: -1
+            property int dropAt: -1
+            property real dragY: 0  // the pointer, in the list's own coordinates
+
+            function trackDrag(y) {
+                dragY = y
+                dropAt = Math.max(0, Math.min(count, Math.round((y + contentY - originY) / rowHeight)))
+            }
+            function endDrag(commit) {
+                if (commit && dragFrom >= 0 && dropAt >= 0) {
+                    const to = dropAt > dragFrom ? dropAt - 1 : dropAt
+                    if (to !== dragFrom)
+                        Player.move(dragFrom, to)
+                }
+                dragFrom = -1
+                dropAt = -1
+            }
+
+            // Scrolls while the pointer is held near the top or bottom edge.
+            Timer {
+                interval: 16
+                repeat: true
+                running: list.dragFrom >= 0
+                onTriggered: {
+                    const edge = 36
+                    let step = 0
+                    if (list.dragY < edge)
+                        step = -Math.ceil((edge - list.dragY) / 3)
+                    else if (list.dragY > list.height - edge)
+                        step = Math.ceil((list.dragY - (list.height - edge)) / 3)
+                    if (step === 0)
+                        return
+                    const top = list.originY
+                    const bottom = Math.max(top, top + list.contentHeight - list.height)
+                    list.contentY = Math.max(top, Math.min(bottom, list.contentY + Math.max(-16, Math.min(16, step))))
+                    list.trackDrag(list.dragY)
+                }
+            }
+
+            Rectangle {
+                visible: list.dragFrom >= 0 && list.dropAt >= 0
+                         && list.dropAt !== list.dragFrom && list.dropAt !== list.dragFrom + 1
+                z: 5
+                x: 0
+                y: list.dropAt * list.rowHeight - (list.contentY - list.originY) - 1
+                width: list.width
+                height: 2
+                color: Theme.text
+            }
+
             delegate: Rectangle {
                 id: row
                 required property int index
@@ -111,11 +164,12 @@ Rectangle {
                 required property real duration
                 readonly property bool isCurrent: index === Player.currentIndex
                 readonly property bool played: index < Player.currentIndex
-                readonly property bool hot: rowArea.containsMouse || upButton.hovered
-                                            || downButton.hovered || removeButton.hovered
+                readonly property bool dragged: list.dragFrom === index
+                readonly property bool hot: list.dragFrom < 0 && (rowArea.containsMouse || removeButton.hovered)
 
                 width: list.width
-                height: 52
+                height: list.rowHeight
+                opacity: dragged ? 0.35 : 1
                 color: row.isCurrent ? Theme.raised : row.hot ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
 
                 MouseArea {
@@ -123,12 +177,29 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    // Otherwise the list takes the press over as a scroll.
+                    preventStealing: true
+                    cursorShape: list.dragFrom >= 0 ? Qt.ClosedHandCursor : Qt.ArrowCursor
+                    property real pressY: 0
                     onPressed: mouse => {
+                        pressY = mouse.y
                         if (mouse.button === Qt.RightButton) {
                             menu.row = row.index
                             menu.popup()
                         }
                     }
+                    onPositionChanged: mouse => {
+                        if (!(mouse.buttons & Qt.LeftButton))
+                            return
+                        if (list.dragFrom < 0) {
+                            if (Math.abs(mouse.y - pressY) < 6 || Player.queue.count < 2)
+                                return
+                            list.dragFrom = row.index
+                        }
+                        list.trackDrag(mapToItem(list, mouse.x, mouse.y).y)
+                    }
+                    onReleased: list.endDrag(true)
+                    onCanceled: list.endDrag(false)
                     onDoubleClicked: mouse => {
                         if (mouse.button === Qt.LeftButton)
                             Player.jump(row.index)
@@ -176,25 +247,8 @@ Rectangle {
                         font.pixelSize: Theme.fontSmall
                         font.features: { "tnum": 1 }
                     }
-                    // Reordering by buttons for now; drag comes with the real queue model.
                     Row {
                         visible: row.hot
-                        IconButton {
-                            id: upButton
-                            implicitWidth: 28
-                            glyph: "up"
-                            tip: "Move up"
-                            enabled: row.index > 0
-                            onClicked: Player.move(row.index, row.index - 1)
-                        }
-                        IconButton {
-                            id: downButton
-                            implicitWidth: 28
-                            glyph: "down"
-                            tip: "Move down"
-                            enabled: row.index < Player.queue.count - 1
-                            onClicked: Player.move(row.index, row.index + 1)
-                        }
                         IconButton {
                             id: removeButton
                             implicitWidth: 28

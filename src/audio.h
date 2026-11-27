@@ -25,6 +25,14 @@ class Audio : public QObject {
   // "mpv" or "Windows".
   Q_PROPERTY(QString backend READ backendName NOTIFY statusChanged)
   Q_PROPERTY(double position READ position NOTIFY positionChanged)  // seconds
+  // Kept between runs. replayGain: "track", "album" or "off"; preamp in dB.
+  Q_PROPERTY(QString replayGain READ replayGain WRITE setReplayGain NOTIFY settingsChanged)
+  Q_PROPERTY(double preamp READ preamp WRITE setPreamp NOTIFY settingsChanged)
+  // The id of the chosen device, "auto" for the system default. A chosen device
+  // that is not connected stays chosen; the default is used until it is back.
+  Q_PROPERTY(QString outputDevice READ outputDevice WRITE setOutputDevice NOTIFY settingsChanged)
+  // Each {id, name}. Empty when the backend cannot choose a device.
+  Q_PROPERTY(QVariantList outputDevices READ outputDevices NOTIFY outputDevicesChanged)
 
  public:
   static Audio* instance();
@@ -34,6 +42,13 @@ class Audio : public QObject {
   QString problem() const;
   QString backendName() const;
   double position() const;
+  QString replayGain() const { return replayGain_; }
+  void setReplayGain(const QString& mode);
+  double preamp() const { return preamp_; }
+  void setPreamp(double db);
+  QString outputDevice() const { return device_; }
+  void setOutputDevice(const QString& id);
+  QVariantList outputDevices() const;
 
   // Starts `trackId` from `startSeconds`. `paused` loads it without sounding.
   // `meta`: title, artist, album, coverArt (for the system display) and gain (the
@@ -51,6 +66,8 @@ class Audio : public QObject {
  signals:
   void statusChanged();
   void positionChanged();
+  void settingsChanged();
+  void outputDevicesChanged();
   // The current track ended and the one given to setNext() is now playing.
   void advanced(const QString& trackId);
   // The last track played to its end (nothing was queued after it).
@@ -65,6 +82,7 @@ class Audio : public QObject {
   explicit Audio(QObject* parent = nullptr);
   void useBackend(AudioBackend* backend);
   QVariantMap withCoverUrl(const QVariantMap& meta) const;
+  void applyOutputDevice();
   void countPlay(const QString& trackId);
   void showOnMediaKeys();
 
@@ -76,4 +94,7 @@ class Audio : public QObject {
   bool paused_ = false;
   int volume_ = 80;
   bool muted_ = false;
+  QString replayGain_ = QStringLiteral("track");
+  double preamp_ = 0;
+  QString device_ = QStringLiteral("auto");
 };

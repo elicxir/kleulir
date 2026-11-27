@@ -108,6 +108,7 @@ MpvBackend::MpvBackend(const QString& executable, QObject* parent) : AudioBacken
     // (Older mpv has no such option; the error reply is ignored.)
     send({"set_property", "media-controls", false});
     send({"observe_property", 1, "playlist-pos"});
+    send({"observe_property", 2, "audio-device-list"});
     for (const QByteArray& line : std::as_const(waiting_)) socket_->write(line);
     waiting_.clear();
   });
@@ -192,7 +193,21 @@ void MpvBackend::onLine(const QByteArray& line) {
   const QString event = msg.value("event").toString();
   if (event.isEmpty()) return;
 
-  if (event == "property-change" && msg.value("name").toString() == "playlist-pos") {
+  if (event == "property-change" && msg.value("name").toString() == "audio-device-list") {
+    // mpv also lists "auto" and other audio systems; only the Windows devices
+    // are offered.
+    QVariantList devices;
+    for (const QJsonValue& value : msg.value("data").toArray()) {
+      const QString id = value["name"].toString();
+      if (!id.startsWith("wasapi/")) continue;
+      const QString name = value["description"].toString();
+      devices.append(QVariantMap{{"id", id}, {"name", name.isEmpty() ? id : name}});
+    }
+    if (devices != devices_) {
+      devices_ = devices;
+      emit outputDevicesChanged();
+    }
+  } else if (event == "property-change" && msg.value("name").toString() == "playlist-pos") {
     // mpv went on to the second entry by itself: that is the gapless change.
     // Drop the played entry, so the current track is entry 0 again.
     if (msg.value("data").toInt(-1) == 1 && hasNext_) {
@@ -276,4 +291,15 @@ void MpvBackend::setVolume(int percent) {
 void MpvBackend::setMuted(bool muted) {
   muted_ = muted;
   send({"set_property", "mute", muted});
+}
+
+void MpvBackend::setReplayGain(const QString& mode, double preampDb) {
+  // mpv reads the gain from the file's tags and limits it where the peak would clip.
+  send({"set_property", "replaygain", mode == "off" ? QStringLiteral("no") : mode});
+  send({"set_property", "replaygain-preamp", preampDb});
+}
+
+void MpvBackend::setOutputDevice(const QString& id) {
+  trace(QStringLiteral("output device: %1").arg(id == "auto" ? id : QStringLiteral("chosen")));
+  send({"set_property", "audio-device", id});
 }
