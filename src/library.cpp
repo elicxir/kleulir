@@ -540,3 +540,225 @@ void Library::deletePlaylist(const QString& id) {
     }
   });
 }
+
+// ---- eos: works, compositions, versions, folders --------------------------------
+
+namespace {
+
+QString names(const std::vector<ArtistRef>& artists) {
+  QStringList out;
+  for (const ArtistRef& a : artists) out << qs(a.name);
+  return out.join(QStringLiteral(", "));
+}
+
+// What an arrangement is called in a list: its name, else its kind, and
+// "Original" for the one a composition has without anybody arranging it.
+QString arrangementLabel(const Arrangement& a) {
+  if (a.name && !a.name->empty()) return qs(*a.name);
+  if (a.is_implicit) return QStringLiteral("Original");
+  if (!a.kind.empty()) return qs(a.kind).left(1).toUpper() + qs(a.kind).mid(1);
+  return QStringLiteral("Arrangement");
+}
+
+QString relationLabel(const Relation& r) {
+  const bool out = r.direction != "in";
+  if (r.type == "medley") return out ? QStringLiteral("Contains") : QStringLiteral("Part of a medley");
+  if (r.type == "quote") return out ? QStringLiteral("Quotes") : QStringLiteral("Quoted by");
+  if (r.type == "derivative") return out ? QStringLiteral("Based on") : QStringLiteral("Derived versions");
+  if (r.type == "cover") return out ? QStringLiteral("Cover of") : QStringLiteral("Covered by");
+  return QStringLiteral("Related");
+}
+
+QVariantMap workMap(const Title& t) {
+  return {
+      {"id", qs(t.id)},
+      {"name", qs(t.name)},
+      {"kind", qs(t.kind.value_or(""))},
+      {"year", t.year.value_or(0)},
+      {"songCount", t.song_count.value_or(0)},
+  };
+}
+
+}  // namespace
+
+void Library::loadWorks() {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this] { loadWorks(); });
+    return;
+  }
+  Session::async([this, api] {
+    QVariantList list;
+    try {
+      const int step = 500;
+      for (int offset = 0;; offset += step) {
+        const auto page = api->titles({}, {.limit = step, .offset = offset});
+        for (const Title& t : page.items) list.append(workMap(t));
+        if (page.items.empty() || offset + step >= page.total) break;
+      }
+    } catch (const std::exception&) {
+      // Leave what was read; the page shows it, or that there is nothing.
+    }
+    Session::onMain([this, list] { emit worksLoaded(list); });
+  });
+}
+
+void Library::loadWork(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadWork(id); });
+    return;
+  }
+  Session::async([this, api, id] {
+    QVariantMap map{{"id", id}};
+    QVariantList albums, songs;
+    try {
+      const auto detail = api->title(id.toStdString());
+      map = workMap(detail.title);
+      for (const Album& a : detail.albums) albums.append(albumMap(a));
+      for (const Song& s : detail.songs) songs.append(trackMap(s, {}));
+    } catch (const std::exception&) {
+    }
+    map["albums"] = albums;
+    map["songs"] = songs;
+    Session::onMain([this, id, map, albums, songs] {
+      absorbStars(albums);
+      absorbStars(songs);
+      emit workLoaded(id, map);
+    });
+  });
+}
+
+void Library::loadCompositions() {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this] { loadCompositions(); });
+    return;
+  }
+  Session::async([this, api] {
+    QVariantList list;
+    try {
+      const int step = 500;
+      for (int offset = 0;; offset += step) {
+        const auto page = api->compositions({}, {.limit = step, .offset = offset});
+        for (const Composition& c : page.items)
+          list.append(QVariantMap{{"id", qs(c.id)}, {"name", qs(c.name)}, {"composers", names(c.composers)}});
+        if (page.items.empty() || offset + step >= page.total) break;
+      }
+    } catch (const std::exception&) {
+    }
+    Session::onMain([this, list] { emit compositionsLoaded(list); });
+  });
+}
+
+void Library::loadComposition(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadComposition(id); });
+    return;
+  }
+  Session::async([this, api, id] {
+    QVariantMap map{{"id", id}};
+    QVariantList songs;
+    try {
+      const auto detail = api->composition(id.toStdString());
+      map["name"] = qs(detail.composition.name);
+      map["composers"] = names(detail.composition.composers);
+      for (const ArrangementSongs& group : detail.arrangements)
+        for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
+    } catch (const std::exception&) {
+    }
+    map["songs"] = songs;
+    Session::onMain([this, id, map, songs] {
+      absorbStars(songs);
+      emit compositionLoaded(id, map);
+    });
+  });
+}
+
+void Library::loadVersions(const QString& songId) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, songId] { loadVersions(songId); });
+    return;
+  }
+  Session::async([this, api, songId] {
+    QVariantMap map;
+    QVariantList songs, compositions;
+    try {
+      const auto v = api->song_versions(songId.toStdString());
+      if (v.composition) {
+        map["compositionId"] = qs(v.composition->id);
+        map["compositionName"] = qs(v.composition->name);
+        map["composers"] = names(v.composition->composers);
+      }
+      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("Same arrangement")));
+      for (const ArrangementSongs& group : v.arrangements)
+        for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
+      for (const RelatedItem& item : v.related) {
+        if (item.song) {
+          songs.append(trackMap(*item.song, relationLabel(item.relation)));
+        } else if (item.composition) {
+          compositions.append(QVariantMap{{"id", qs(item.composition->id)},
+                                          {"name", qs(item.composition->name)},
+                                          {"relation", relationLabel(item.relation)}});
+        }
+      }
+    } catch (const std::exception&) {
+    }
+    map["songs"] = songs;
+    map["compositions"] = compositions;
+    Session::onMain([this, songId, map, songs] {
+      absorbStars(songs);
+      emit versionsLoaded(songId, map);
+    });
+  });
+}
+
+void Library::loadFolders() {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this] { loadFolders(); });
+    return;
+  }
+  Session::async([this, api] {
+    QVariantList list;
+    try {
+      for (const Folder& f : api->folders()) {
+        list.append(QVariantMap{
+            {"id", qs(f.id)},
+            {"name", qs(f.name)},
+            {"parentId", qs(f.parent_id.value_or(""))},
+            {"sortOrder", f.sort_order.value_or(0)},
+            {"albumCount", f.album_count},
+            {"childCount", f.child_count},
+        });
+      }
+    } catch (const std::exception&) {
+    }
+    Session::onMain([this, list] { emit foldersLoaded(list); });
+  });
+}
+
+void Library::loadFolder(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadFolder(id); });
+    return;
+  }
+  Session::async([this, api, id] {
+    QVariantMap map{{"id", id}};
+    QVariantList albums;
+    try {
+      const auto detail = api->folder(id.toStdString());
+      map["name"] = qs(detail.folder.name);
+      for (const Album& a : detail.albums) albums.append(albumMap(a));
+    } catch (const std::exception&) {
+    }
+    map["albums"] = albums;
+    Session::onMain([this, id, map, albums] {
+      absorbStars(albums);
+      emit folderLoaded(id, map);
+    });
+  });
+}

@@ -77,6 +77,12 @@ qt_add_qml_module(kleulir
     qml/ArtistPage.qml
     qml/PlaylistsPage.qml
     qml/PlaylistPage.qml
+    qml/IndexPage.qml
+    qml/FoldersPage.qml
+    qml/WorksPage.qml
+    qml/WorkPage.qml
+    qml/CompositionsPage.qml
+    qml/CompositionPage.qml
 )
 
 target_include_directories(kleulir PRIVATE src)

@@ -153,6 +153,26 @@ ApplicationWindow {
         id: playlistPage
         PlaylistPage {}
     }
+    Component {
+        id: foldersPage
+        FoldersPage {}
+    }
+    Component {
+        id: worksPage
+        WorksPage {}
+    }
+    Component {
+        id: workPage
+        WorkPage {}
+    }
+    Component {
+        id: compositionsPage
+        CompositionsPage {}
+    }
+    Component {
+        id: compositionPage
+        CompositionPage {}
+    }
     function render() {
         const entry = Nav.current
         if (entry.page === "album")
@@ -171,6 +191,20 @@ ApplicationWindow {
             stack.replace(null, playlistsPage)
         else if (entry.page === "playlist")
             stack.replace(null, playlistPage, { playlist: entry.playlist })
+        else if (entry.page === "folders")
+            stack.replace(null, foldersPage)
+        else if (entry.page === "folder")
+            stack.replace(null, foldersPage, { folder: entry.folder })
+        else if (entry.page === "works")
+            stack.replace(null, worksPage)
+        else if (entry.page === "work")
+            stack.replace(null, workPage, { work: entry.work })
+        else if (entry.page === "compositions")
+            stack.replace(null, compositionsPage)
+        else if (entry.page === "composition")
+            stack.replace(null, compositionPage, { composition: entry.composition })
+        else if (entry.page === "versions")
+            stack.replace(null, compositionPage, { song: entry.song })
         else
             stack.clear()
     }

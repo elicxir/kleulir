@@ -66,6 +66,12 @@ PopupMenu {
         onTriggered: Library.setStarred(root.tracks.map(t => t.id), !root.allStarred)
     }
     PopupMenuItem {
+        // Other recordings of the same music; only an eos server knows them.
+        visible: Session.eosFeatures && root.picked === 1
+        text: "Show other versions"
+        onTriggered: Nav.go({ page: "versions", song: root.tracks[0] })
+    }
+    PopupMenuItem {
         visible: root.showGoToAlbum && root.picked === 1 && !!root.tracks[0].albumId
         text: "Go to album"
         onTriggered: Nav.openAlbumId(root.tracks[0].albumId, root.tracks[0].album)

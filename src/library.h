@@ -73,6 +73,27 @@ class Library : public QObject {
   Q_INVOKABLE void renamePlaylist(const QString& id, const QString& name);
   Q_INVOKABLE void deletePlaylist(const QString& id);
 
+  // ---- eos only (Session.eosFeatures) ----
+  // Works are what the server calls titles: the game, film or show music belongs
+  // to. Answers with worksLoaded: id, name, kind, year, songCount.
+  Q_INVOKABLE void loadWorks();
+  // Answers with workLoaded: id, name, kind, year, albums, songs.
+  Q_INVOKABLE void loadWork(const QString& id);
+  // Answers with compositionsLoaded: id, name, composers.
+  Q_INVOKABLE void loadCompositions();
+  // Answers with compositionLoaded: id, name, composers and songs, each song's
+  // `work` naming its arrangement (the list's section).
+  Q_INVOKABLE void loadComposition(const QString& id);
+  // The other recordings of what `songId` is. Answers with versionsLoaded:
+  // compositionId, compositionName, composers, songs (sectioned like above) and
+  // compositions (related ones: id, name, relation).
+  Q_INVOKABLE void loadVersions(const QString& songId);
+  // Answers with foldersLoaded: every folder, flat: id, name, parentId,
+  // albumCount, childCount.
+  Q_INVOKABLE void loadFolders();
+  // Answers with folderLoaded: id, name, albums.
+  Q_INVOKABLE void loadFolder(const QString& id);
+
  signals:
   void albumsChanged();   // the list itself changed
   void statusChanged();   // loading or error changed
@@ -89,6 +110,13 @@ class Library : public QObject {
   void playlistChanged(const QString& id);
   void playlistCreated(const QString& id, const QString& name);
   void playlistDeleted(const QString& id);
+  void worksLoaded(const QVariantList& works);
+  void workLoaded(const QString& id, const QVariantMap& work);
+  void compositionsLoaded(const QVariantList& compositions);
+  void compositionLoaded(const QString& id, const QVariantMap& composition);
+  void versionsLoaded(const QString& songId, const QVariantMap& versions);
+  void foldersLoaded(const QVariantList& folders);
+  void folderLoaded(const QString& id, const QVariantMap& folder);
 
  private:
   explicit Library(QObject* parent = nullptr);

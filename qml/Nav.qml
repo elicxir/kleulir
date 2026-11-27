@@ -3,8 +3,9 @@ import QtQuick
 import Kleulir
 
 // Where the content area is, with a back/forward history like a browser's.
-// An entry is { page, album? | artist? | playlist? }; page is one of albums, album,
-// artists, artist, starred, playlists, playlist, search, settings.
+// An entry is { page, album? | artist? | playlist? | ... }; page is one of albums,
+// album, artists, artist, starred, playlists, playlist, search, settings, and on an
+// eos server folders, folder, works, work, compositions, composition, versions.
 QtObject {
     id: root
 
@@ -26,6 +27,14 @@ QtObject {
             return a.artist.id === b.artist.id
         if (a.page === "playlist")
             return a.playlist.id === b.playlist.id
+        if (a.page === "folder")
+            return a.folder.id === b.folder.id
+        if (a.page === "work")
+            return a.work.id === b.work.id
+        if (a.page === "composition")
+            return a.composition.id === b.composition.id
+        if (a.page === "versions")
+            return a.song.id === b.song.id
         return true
     }
 

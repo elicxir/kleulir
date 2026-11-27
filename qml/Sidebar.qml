@@ -10,19 +10,28 @@ Rectangle {
     // The page that is open; an album belongs under Albums.
     readonly property string currentKey: {
         const page = Nav.current.page
-        return page === "album" ? "albums" : page === "artist" ? "artists" : page === "playlist" ? "playlists" : page
+        const parents = {
+            album: "albums", artist: "artists", playlist: "playlists",
+            folder: "folders", work: "works", composition: "compositions", versions: "compositions"
+        }
+        return parents[page] || page
     }
 
-    // Only pages that exist. Genres, Folders, Works and Suggestions come back as
-    // they are built.
+    // Only pages that exist; Genres and Suggestions come as they are built.
+    // Folders, works and compositions are what an eos server adds.
     readonly property var entries: [
         { section: "LIBRARY" },
         { key: "albums", label: "Albums" },
-        { key: "artists", label: "Artists" },
+        { key: "artists", label: "Artists" }
+    ].concat(Session.eosFeatures ? [
+        { key: "folders", label: "Folders" },
+        { key: "works", label: "Works" },
+        { key: "compositions", label: "Compositions" }
+    ] : []).concat([
         { section: "YOU" },
         { key: "starred", label: "Starred" },
         { key: "playlists", label: "Playlists" }
-    ]
+    ])
 
     ColumnLayout {
         anchors.fill: parent
