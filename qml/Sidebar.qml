@@ -70,7 +70,7 @@ Rectangle {
         }
 
         Repeater {
-            model: root.entries.filter(e => !e.eos || MockData.eosFeatures)
+            model: root.entries.filter(e => !e.eos || Session.eosFeatures)
 
             delegate: Loader {
                 id: slot

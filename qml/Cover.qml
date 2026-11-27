@@ -2,12 +2,13 @@ import QtQuick
 import QtQuick.Effects
 import Kleulir
 
-// Cover art. Until real art is wired in (`source` takes the getCoverArt URL)
-// it draws a two-tone tile with the title's first letter.
+// Cover art. While it loads, or when there is none, it draws a two-tone tile
+// with the title's first letter.
 Item {
     id: root
     property string title: ""
-    property url source
+    // Cover art id from the server; empty shows the placeholder.
+    property string art: ""
     property int radius: 0
     property bool shadow: false
 
@@ -45,7 +46,7 @@ Item {
         Image {
             id: image
             anchors.fill: parent
-            source: root.source
+            source: root.art.length > 0 ? "image://cover/" + root.art : ""
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             sourceSize.width: width

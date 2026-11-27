@@ -1,10 +1,10 @@
 pragma Singleton
 import QtQuick
+import Kleulir
 
-// Stand-in for libeos' QueueModel + Controller. No sound: a timer advances
-// the position so the transport, the queue and the seek bar can be exercised.
-// The queue is replaceable as a whole (replaceQueue) because the real one
-// will be overwritten by the server's `state` message.
+// The queue and the transport. Sound comes from Audio (the Windows media player).
+// The queue is replaceable as a whole (replaceQueue) because it will later be
+// overwritten by the server's `state` message.
 QtObject {
     id: root
 
@@ -24,11 +24,31 @@ QtObject {
     }
     readonly property real duration: current ? current.duration : 0
 
+    onVolumeChanged: Audio.setVolume(Math.round(volume * 100))
+    onMutedChanged: Audio.setMuted(muted)
+
     function entryFor(track, album) {
         return {
             trackId: track.id, title: track.title, artist: track.artist,
-            duration: track.duration, album: album ? album.title : ""
+            duration: track.duration, album: album ? album.title : "",
+            coverArt: track.coverArt || (album ? album.coverArt : "") || "",
+            gain: track.gain || 0
         }
+    }
+
+    // Starts the current queue entry from the top.
+    function start() {
+        position = 0
+        if (currentIndex < 0 || currentIndex >= queue.count) {
+            playing = false
+            Audio.stop()
+            return
+        }
+        playing = true
+        const e = queue.get(currentIndex)
+        Audio.play(e.trackId, 0, false, {
+            title: e.title, artist: e.artist, album: e.album, coverArt: e.coverArt, gain: e.gain
+        })
     }
 
     function replaceQueue(entries, startIndex) {
@@ -36,9 +56,8 @@ QtObject {
         for (let i = 0; i < entries.length; ++i)
             queue.append(entries[i])
         currentIndex = entries.length > 0 ? Math.min(startIndex, entries.length - 1) : -1
-        position = 0
-        playing = currentIndex >= 0
         ++revision
+        start()
     }
 
     function playAlbum(album, startIndex) {
@@ -47,41 +66,53 @@ QtObject {
 
     function enqueue(track, album) {
         queue.append(entryFor(track, album))
-        if (currentIndex < 0)
+        const first = currentIndex < 0
+        if (first)
             currentIndex = 0
         ++revision
+        if (first)
+            start()
     }
 
     function playNext(track, album) {
         queue.insert(currentIndex + 1, entryFor(track, album))
-        if (currentIndex < 0)
+        const first = currentIndex < 0
+        if (first)
             currentIndex = 0
         ++revision
+        if (first)
+            start()
     }
 
     function jump(index) {
         if (index < 0 || index >= queue.count)
             return
         currentIndex = index
-        position = 0
-        playing = true
         ++revision
+        start()
     }
 
     function removeAt(index) {
         if (index < 0 || index >= queue.count)
             return
+        const wasCurrent = index === currentIndex
         queue.remove(index)
         if (index < currentIndex) {
             --currentIndex
-        } else if (index === currentIndex) {
-            position = 0
-            if (currentIndex >= queue.count) {
-                currentIndex = queue.count - 1
-                playing = false
-            }
+        } else if (wasCurrent && currentIndex >= queue.count) {
+            currentIndex = queue.count - 1
         }
         ++revision
+        if (wasCurrent) {
+            // The entry that moved into this place plays next; nothing left stops.
+            if (playing && currentIndex >= 0) {
+                start()
+            } else {
+                playing = false
+                position = 0
+                Audio.stop()
+            }
+        }
     }
 
     function move(from, to) {
@@ -103,11 +134,14 @@ QtObject {
         position = 0
         playing = false
         ++revision
+        Audio.stop()
     }
 
     function toggle() {
-        if (current)
-            playing = !playing
+        if (!current)
+            return
+        playing = !playing
+        Audio.setPaused(!playing)
     }
 
     function next() {
@@ -116,28 +150,44 @@ QtObject {
         } else {
             playing = false
             position = 0
+            Audio.stop()
         }
     }
 
     function previous() {
         if (position > 3 || currentIndex <= 0)
-            position = 0
+            seek(0)
         else
             jump(currentIndex - 1)
     }
 
     function seek(seconds) {
         position = Math.max(0, Math.min(seconds, duration))
+        Audio.seek(position)
     }
 
-    property Timer ticker: Timer {
-        interval: 250
-        repeat: true
-        running: root.playing
-        onTriggered: {
-            root.position += interval / 1000
-            if (root.position >= root.duration)
+    property Connections audioEvents: Connections {
+        target: Audio
+        function onPositionChanged() {
+            if (root.current)
+                root.position = Audio.position
+        }
+        // Media keys and the system flyout.
+        function onPausedChanged(paused) {
+            if (root.current)
+                root.playing = !paused
+        }
+        function onNextRequested() { root.next() }
+        function onPreviousRequested() { root.previous() }
+        function onFinished(trackId) {
+            if (root.current && root.current.trackId === trackId)
+                root.next()
+        }
+        function onFailed(trackId, reason) {
+            console.warn("playback failed:", reason)
+            if (root.current && root.current.trackId === trackId)
                 root.next()
         }
     }
+
 }

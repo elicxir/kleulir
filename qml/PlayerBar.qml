@@ -31,6 +31,7 @@ Rectangle {
                 Layout.preferredWidth: 52
                 Layout.preferredHeight: 52
                 title: Player.current ? Player.current.album : ""
+                art: Player.current ? Player.current.coverArt : ""
                 visible: Player.current !== null
                 shadow: true
             }
@@ -39,8 +40,11 @@ Rectangle {
                 spacing: 3
                 Text {
                     Layout.fillWidth: true
-                    text: Player.current ? Player.current.title : "Nothing playing"
-                    color: Player.current ? Theme.text : Theme.textFaint
+                    text: Player.current ? Player.current.title
+                          : !Audio.available ? Audio.problem : "Nothing playing"
+                    color: Player.current ? Theme.text : !Audio.available ? Theme.estimated : Theme.textFaint
+                    wrapMode: Player.current ? Text.NoWrap : Text.Wrap
+                    maximumLineCount: 2
                     font.pixelSize: 14
                     elide: Text.ElideRight
                 }
@@ -172,7 +176,7 @@ Rectangle {
 
             IconButton {
                 id: deviceButton
-                visible: MockData.eosFeatures
+                visible: Session.eosFeatures
                 glyph: "device"
                 tip: "Play on: " + (root.device ? root.device.name : "")
                 active: root.remote

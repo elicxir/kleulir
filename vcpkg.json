@@ -4,6 +4,8 @@
   "dependencies": [
     "qtbase",
     "qtdeclarative",
-    "qtsvg"
+    "qtsvg",
+    "curl",
+    "nlohmann-json"
   ]
 }

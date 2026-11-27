@@ -7,21 +7,47 @@ import Kleulir
 // returns them; tracks without a work fall under an untitled group.
 Item {
     id: root
+    // Starts as the summary from the list (no tracks) and is replaced by the
+    // full album once it has loaded.
     property var album
+    property string loadError: ""
     signal back()
+
+    readonly property var tracks: album && album.tracks ? album.tracks : []
+    property string requested: ""
+    function request() {
+        if (album && !album.tracks && requested !== album.id) {
+            requested = album.id
+            Library.loadAlbum(album.id)
+        }
+    }
+    Connections {
+        target: Library
+        function onAlbumLoaded(id, loaded) {
+            if (root.album && id === root.album.id)
+                root.album = loaded
+        }
+        function onAlbumFailed(id, message) {
+            if (root.album && id === root.album.id)
+                root.loadError = message
+        }
+    }
 
     function reload() {
         trackModel.clear()
-        if (album)
-            album.tracks.forEach(t => trackModel.append({
+        request()
+        // Read album.tracks directly: the `tracks` binding may not have updated yet
+        // when this runs from onAlbumChanged.
+        const list = album && album.tracks ? album.tracks : []
+        list.forEach(t => trackModel.append({
                 trackId: t.id, title: t.title, artist: t.artist,
                 duration: t.duration, work: t.work, estimated: t.estimated
-            }))
+        }))
     }
     onAlbumChanged: reload()
     Component.onCompleted: reload()
 
-    readonly property int totalSeconds: album ? album.tracks.reduce((s, t) => s + t.duration, 0) : 0
+    readonly property int totalSeconds: tracks.reduce((s, t) => s + t.duration, 0)
     readonly property real hue: Theme.coverHue(album ? album.title : "")
 
     // Wash of the cover's colour behind the header, fading into the panel.
@@ -66,6 +92,7 @@ Item {
                     Layout.preferredWidth: 184
                     Layout.preferredHeight: 184
                     title: root.album ? root.album.title : ""
+                    art: root.album ? root.album.coverArt : ""
                     shadow: true
                 }
 
@@ -93,8 +120,11 @@ Item {
                     }
                     Text {
                         text: root.album
-                              ? root.album.artist + " · " + root.album.year + " · "
-                                + root.album.tracks.length + " tracks · " + Theme.time(root.totalSeconds)
+                              ? [root.album.artist, root.album.year > 0 ? root.album.year : "",
+                                 root.loadError.length > 0 ? root.loadError
+                                 : root.album.tracks ? root.tracks.length + " tracks" : "Loading…",
+                                 root.album.tracks ? Theme.time(root.totalSeconds) : ""]
+                                .filter(part => String(part).length > 0).join(" · ")
                               : ""
                         color: Theme.textDim
                         font.pixelSize: Theme.fontBody
@@ -109,6 +139,7 @@ Item {
                             implicitWidth: playRow.implicitWidth + 32
                             hoverEnabled: true
                             Accessible.name: "Play"
+                            enabled: root.tracks.length > 0
                             onClicked: Player.playAlbum(root.album, 0)
                             background: Rectangle {
                                 color: playButton.down ? Theme.textDim
@@ -140,7 +171,8 @@ Item {
                             implicitHeight: 36
                             implicitWidth: enqueueLabel.implicitWidth + 32
                             hoverEnabled: true
-                            onClicked: root.album.tracks.forEach(t => Player.enqueue(t, root.album))
+                            enabled: root.tracks.length > 0
+                            onClicked: root.tracks.forEach(t => Player.enqueue(t, root.album))
                             background: Rectangle {
                                 color: enqueueButton.hovered ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
                                 border.color: Qt.rgba(1, 1, 1, 0.28)
@@ -191,7 +223,7 @@ Item {
             required property string artist
             required property real duration
             required property bool estimated
-            readonly property var track: root.album ? root.album.tracks[index] : null
+            readonly property var track: index < root.tracks.length ? root.tracks[index] : null
             readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
             readonly property bool hot: rowArea.containsMouse || nextButton.hovered || addButton.hovered
 

@@ -123,12 +123,37 @@ ApplicationWindow {
     Component.onCompleted: {
         if (Qt.application.arguments.indexOf("--demo-settings") >= 0)
             navigate("settings")
-        if (Qt.application.arguments.indexOf("--demo-album") >= 0) {
-            const album = MockData.albums[0]
-            stack.push(albumPage, { album: album })
-            Player.playAlbum(album, 2)
-            Player.position = 74
+    }
+
+    // `--demo-album`: once the library has loaded, open its first album.
+    property bool demoDone: false
+    Connections {
+        target: Library
+        function onAlbumsChanged() {
+            if (window.demoDone || Library.albums.length === 0
+                    || Qt.application.arguments.indexOf("--demo-album") < 0)
+                return
+            window.demoDone = true
+            stack.push(albumPage, { album: Library.albums[0] })
+            if (Qt.application.arguments.indexOf("--demo-play") >= 0)
+                Library.loadAlbum(Library.albums[0].id)
         }
+    }
+
+    // `--demo-play`: also start that album, to check real playback.
+    Connections {
+        target: Library
+        function onAlbumLoaded(id, album) {
+            if (Qt.application.arguments.indexOf("--demo-play") >= 0 && Player.queue.count === 0)
+                Player.playAlbum(album, 0)
+        }
+    }
+
+    LoginPage {
+        anchors.fill: parent
+        visible: Session.state !== Session.Ready
+        // Swallow clicks meant for the UI underneath.
+        MouseArea { anchors.fill: parent; z: -1 }
     }
 
     Shortcut {

@@ -7,9 +7,25 @@ Item {
     id: root
     signal openAlbum(var album)
 
+    // The list has no tracks; fetch the album, then start it.
+    property string pendingPlay: ""
+    function playAlbum(album) {
+        pendingPlay = album.id
+        Library.loadAlbum(album.id)
+    }
+    Connections {
+        target: Library
+        function onAlbumLoaded(id, album) {
+            if (id === root.pendingPlay) {
+                root.pendingPlay = ""
+                Player.playAlbum(album, 0)
+            }
+        }
+    }
+
     // "all" | "physical" | "virtual" — the same filter /ext/albums takes.
     property string kind: "all"
-    readonly property var shown: MockData.albums.filter(a => kind === "all" || a.kind === kind)
+    readonly property var shown: Library.albums.filter(a => kind === "all" || a.kind === kind)
 
     ColumnLayout {
         anchors.fill: parent
@@ -30,7 +46,7 @@ Item {
                 font.weight: Font.Bold
             }
             Text {
-                text: root.shown.length + " albums"
+                text: Library.loading ? "Loading…" : Library.error.length > 0 ? Library.error : root.shown.length + " albums"
                 color: Theme.textFaint
                 font.pixelSize: Theme.fontBody
                 Layout.alignment: Qt.AlignBaseline
@@ -39,7 +55,7 @@ Item {
 
             // Segmented filter
             Rectangle {
-                visible: MockData.eosFeatures
+                visible: Session.eosFeatures
                 implicitWidth: segments.implicitWidth + 6
                 implicitHeight: 32
                 color: Theme.raised
@@ -114,6 +130,7 @@ Item {
                             id: cover
                             anchors.fill: parent
                             title: cell.modelData.title
+                            art: cell.modelData.coverArt
                             shadow: area.containsMouse
                         }
 
@@ -167,7 +184,7 @@ Item {
                     }
                     Text {
                         width: parent.width
-                        text: cell.modelData.artist + " · " + cell.modelData.year
+                        text: cell.modelData.year > 0 ? cell.modelData.artist + " · " + cell.modelData.year : cell.modelData.artist
                         color: Theme.textDim
                         font.pixelSize: Theme.fontSmall
                         elide: Text.ElideRight
@@ -185,7 +202,7 @@ Item {
                         const s = cell.side
                         const onPlay = mouse.x > s - 52 && mouse.y > s - 52 && mouse.y < s
                         if (onPlay)
-                            Player.playAlbum(cell.modelData, 0)
+                            root.playAlbum(cell.modelData)
                         else
                             root.openAlbum(cell.modelData)
                     }

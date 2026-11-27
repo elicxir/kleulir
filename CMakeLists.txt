@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
 qt_standard_project_setup(REQUIRES 6.8)
 
+# libeos: the UI-less client library shared with the other eos clients.
+add_subdirectory(external/eos/client/libeos)
+
 qt_add_executable(kleulir WIN32
   src/main.cpp
 )
@@ -24,6 +27,12 @@ set_source_files_properties(
 qt_add_qml_module(kleulir
   URI Kleulir
   VERSION 1.0
+  SOURCES
+    src/session.h src/session.cpp
+    src/library.h src/library.cpp
+    src/coverprovider.h src/coverprovider.cpp
+    src/credentials.h src/credentials.cpp
+    src/audio.h src/audio.cpp
   QML_FILES
     qml/Main.qml
     qml/Theme.qml
@@ -39,9 +48,13 @@ qt_add_qml_module(kleulir
     qml/AlbumPage.qml
     qml/PlaceholderPage.qml
     qml/SettingsPage.qml
+    qml/LoginPage.qml
 )
 
-target_link_libraries(kleulir PRIVATE Qt6::Quick Qt6::QuickControls2)
+target_include_directories(kleulir PRIVATE src)
+target_link_libraries(kleulir PRIVATE Qt6::Quick Qt6::QuickControls2 eos::client advapi32 WindowsApp)
+# C++/WinRT headers (Windows SDK) for the system media player.
+target_compile_options(kleulir PRIVATE /bigobj)
 
 # Running from the build tree: point Qt at vcpkg's plugins and QML modules.
 # A packaged build will ship its own copies instead (windeployqt).

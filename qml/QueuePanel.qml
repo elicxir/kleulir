@@ -78,6 +78,7 @@ Rectangle {
                 required property string title
                 required property string artist
                 required property string album
+                required property string coverArt
                 required property real duration
                 readonly property bool isCurrent: index === Player.currentIndex
                 readonly property bool played: index < Player.currentIndex
@@ -105,6 +106,7 @@ Rectangle {
                         Layout.preferredWidth: 36
                         Layout.preferredHeight: 36
                         title: row.album
+                        art: row.coverArt
                         opacity: row.played ? 0.45 : 1
                     }
                     ColumnLayout {
