@@ -4,6 +4,10 @@ project(kleulir VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Packaged layout is flat: the DLLs sit next to kleulir.exe rather than in bin/.
+# Qt's deploy support reads this when Qt is found, so it must be set first.
+set(CMAKE_INSTALL_BINDIR ".")
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2)
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -65,3 +69,22 @@ if(DEFINED VCPKG_INSTALLED_DIR)
     CONTENT "[Paths]\nPrefix = ${_qt_root}\nPlugins = plugins\nQmlImports = qml\n"
   )
 endif()
+
+# Packaging: `cmake --install build --config Release --prefix dist/kleulir` gathers the
+# executable, the Qt libraries, plugins and QML modules it needs, and the other DLLs
+# (libcurl and friends) into one folder that runs from anywhere.
+install(TARGETS kleulir RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# DLLs that only Qt plugins depend on are not picked up by either tool: the JPEG
+# image plugin (cover art) needs libjpeg.
+if(DEFINED VCPKG_INSTALLED_DIR)
+  install(FILES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/jpeg62.dll"
+          DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+qt_generate_deploy_qml_app_script(
+  TARGET kleulir
+  OUTPUT_SCRIPT kleulir_deploy_script
+  NO_UNSUPPORTED_PLATFORM_ERROR
+  NO_TRANSLATIONS
+  DEPLOY_TOOL_OPTIONS --no-compiler-runtime --no-system-d3d-compiler --no-opengl-sw
+)
+install(SCRIPT ${kleulir_deploy_script})
