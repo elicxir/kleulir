@@ -27,18 +27,8 @@ Rectangle {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.gap
-        anchors.topMargin: 14
+        anchors.topMargin: Theme.gap
         spacing: 2
-
-        Text {
-            text: "kleulir"
-            color: Theme.text
-            font.pixelSize: 19
-            font.weight: Font.Bold
-            font.letterSpacing: 0.5
-            Layout.leftMargin: 12
-            Layout.bottomMargin: 14
-        }
 
         Button {
             id: searchButton
