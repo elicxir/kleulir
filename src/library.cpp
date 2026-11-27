@@ -2,6 +2,10 @@
 
 #include <QCoreApplication>
 #include <QJSEngine>
+#include <QJsonArray>
+#include <QJsonDocument>
+
+#include "cache.h"
 
 #include "session.h"
 
@@ -46,13 +50,19 @@ QString describe(const Error& e) {
 }  // namespace
 
 Library::Library(QObject* parent) : QObject(parent) {
+  // Show last run's album list at once; the server's answer replaces it.
+  loadCachedAlbums();
+  if (Session::instance()->state() == Session::Ready) refresh();
+
   connect(Session::instance(), &Session::changed, this, [this] {
     const bool ready = Session::instance()->state() == Session::Ready;
-    if (ready && albums_.isEmpty() && !loading_) {
+    if (ready && !fresh_ && !loading_) {
       refresh();
     } else if (Session::instance()->state() == Session::LoggedOut && !albums_.isEmpty()) {
       ++generation_;
       albums_.clear();
+      details_.clear();
+      fresh_ = false;
       emit albumsChanged();
     }
   });
@@ -75,9 +85,11 @@ void Library::refresh() {
   const int generation = ++generation_;
   loading_ = true;
   error_.clear();
-  emit albumsChanged();
+  details_.clear();
+  emit statusChanged();
+  const QString cacheFile = cache::folder(Session::instance()->serverUrl()) + "/albums.json";
 
-  Session::async([this, api, eos, generation] {
+  Session::async([this, api, eos, generation, cacheFile] {
     QVariantList list;
     QString error;
     try {
@@ -101,17 +113,39 @@ void Library::refresh() {
     } catch (const std::exception& e) {
       error = QString::fromUtf8(e.what());
     }
+    if (error.isEmpty())
+      cache::write(cacheFile, QJsonDocument(QJsonArray::fromVariantList(list)).toJson(QJsonDocument::Compact));
     Session::onMain([this, list, error, generation] {
       if (generation != generation_) return;
       loading_ = false;
       error_ = error;
-      if (error.isEmpty()) albums_ = list;
-      emit albumsChanged();
+      if (error.isEmpty()) {
+        fresh_ = true;
+        // Leave the list alone when nothing changed, so the grid is not rebuilt.
+        if (albums_ != list) {
+          albums_ = list;
+          emit albumsChanged();
+        }
+      }
+      emit statusChanged();
     });
   });
 }
 
+void Library::loadCachedAlbums() {
+  const QString folder = cache::folder(Session::instance()->serverUrl());
+  if (folder.isEmpty()) return;
+  const QJsonDocument doc = QJsonDocument::fromJson(cache::read(folder + "/albums.json"));
+  if (doc.isArray()) albums_ = doc.array().toVariantList();
+}
+
 void Library::loadAlbum(const QString& id) {
+  // Opening an album again is instant; refresh() drops these.
+  if (const auto found = details_.constFind(id); found != details_.constEnd()) {
+    const QVariantMap album = *found;
+    Session::onMain([this, id, album] { emit albumLoaded(id, album); });
+    return;
+  }
   auto api = Session::instance()->api();
   if (!api) return;
   const bool eos = Session::instance()->eosFeatures();
@@ -134,7 +168,10 @@ void Library::loadAlbum(const QString& id) {
         for (const Song& s : full.songs) tracks.append(trackMap(s, {}));
       }
       album["tracks"] = tracks;
-      Session::onMain([this, id, album] { emit albumLoaded(id, album); });
+      Session::onMain([this, id, album] {
+        details_.insert(id, album);
+        emit albumLoaded(id, album);
+      });
     } catch (const Error& e) {
       const QString text = describe(e);
       Session::onMain([this, id, text] { emit albumFailed(id, text); });

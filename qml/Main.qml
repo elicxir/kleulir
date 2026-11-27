@@ -123,13 +123,13 @@ ApplicationWindow {
     Component.onCompleted: {
         if (Qt.application.arguments.indexOf("--demo-settings") >= 0)
             navigate("settings")
+        // The album list may already be there from the cache.
+        tryDemo()
     }
 
     // `--demo-album`: once the library has loaded, open its first album.
     property bool demoDone: false
-    Connections {
-        target: Library
-        function onAlbumsChanged() {
+    function tryDemo() {
             if (window.demoDone || Library.albums.length === 0
                     || Qt.application.arguments.indexOf("--demo-album") < 0)
                 return
@@ -137,7 +137,10 @@ ApplicationWindow {
             stack.push(albumPage, { album: Library.albums[0] })
             if (Qt.application.arguments.indexOf("--demo-play") >= 0)
                 Library.loadAlbum(Library.albums[0].id)
-        }
+    }
+    Connections {
+        target: Library
+        function onAlbumsChanged() { window.tryDemo() }
     }
 
     // `--demo-play`: also start that album, to check real playback.
@@ -151,7 +154,8 @@ ApplicationWindow {
 
     LoginPage {
         anchors.fill: parent
-        visible: Session.state !== Session.Ready
+        // Not while reconnecting with a saved key: that shows the cached library.
+        visible: Session.state !== Session.Ready && !Session.restoring
         // Swallow clicks meant for the UI underneath.
         MouseArea { anchors.fill: parent; z: -1 }
     }

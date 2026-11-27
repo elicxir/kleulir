@@ -25,6 +25,9 @@ class Session : public QObject {
   // false on a plain OpenSubsonic server: no /ext, so no folders, works or sync.
   Q_PROPERTY(bool eosFeatures READ eosFeatures NOTIFY changed)
   Q_PROPERTY(QString error READ error NOTIFY changed)
+  // true while reconnecting with a saved key: the UI shows the library (from its
+  // cache) instead of the login page.
+  Q_PROPERTY(bool restoring READ restoring NOTIFY changed)
 
  public:
   enum State { LoggedOut, Connecting, Ready, Offline };
@@ -39,6 +42,7 @@ class Session : public QObject {
   bool admin() const { return admin_; }
   bool eosFeatures() const { return eosFeatures_; }
   QString error() const { return error_; }
+  bool restoring() const { return restoring_; }
 
   // Null unless state() == Ready.
   std::shared_ptr<eos::client::Api> api() const { return api_; }
@@ -68,5 +72,6 @@ class Session : public QObject {
   QString serverUrl_, username_, error_;
   bool admin_ = false;
   bool eosFeatures_ = false;
+  bool restoring_ = false;
   std::shared_ptr<eos::client::Api> api_;
 };

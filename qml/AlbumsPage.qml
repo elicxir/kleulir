@@ -46,7 +46,8 @@ Item {
                 font.weight: Font.Bold
             }
             Text {
-                text: Library.loading ? "Loading…" : Library.error.length > 0 ? Library.error : root.shown.length + " albums"
+                text: Library.albums.length === 0 && Library.loading ? "Loading…"
+                      : Library.error.length > 0 ? Library.error : root.shown.length + " albums"
                 color: Theme.textFaint
                 font.pixelSize: Theme.fontBody
                 Layout.alignment: Qt.AlignBaseline
@@ -103,6 +104,8 @@ Item {
             Layout.fillHeight: true
             clip: true
             model: root.shown
+            // Build a few rows beyond the view, so covers are ready before they scroll in.
+            cacheBuffer: 900
 
             readonly property int columns: Math.max(2, Math.floor(width / 200))
             cellWidth: Math.floor((width - 8) / columns)

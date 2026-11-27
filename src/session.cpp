@@ -68,6 +68,9 @@ void Session::restore() {
   serverUrl_ = url;
   if (url.isEmpty()) return;
   if (auto saved = credentials::load(url)) {
+    restoring_ = true;
+    // Until the server answers, assume what was true last time.
+    eosFeatures_ = QSettings().value("server/eos", false).toBool();
     connectWithKey(url, saved->username, saved->key);
   } else {
     emit changed();
@@ -85,6 +88,7 @@ void Session::login(const QString& serverUrl, const QString& username, const QSt
     return;
   }
   serverUrl_ = url;
+  restoring_ = false;
   set(Connecting);
 
   const QString device = QStringLiteral("kleulir (%1)").arg(QSysInfo::machineHostName());
@@ -130,6 +134,8 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
         username_ = QString::fromStdString(user.username);
         admin_ = user.admin;
         eosFeatures_ = eos;
+        restoring_ = false;
+        QSettings().setValue("server/eos", eos);
         set(Ready);
       });
     } catch (const Error& e) {
@@ -137,12 +143,16 @@ void Session::connectWithKey(const QString& serverUrl, const QString& username, 
       const QString text = rejected ? QStringLiteral("The saved key is no longer valid. Log in again.") : message(e);
       onMain([this, serverUrl, rejected, text] {
         api_.reset();
+        restoring_ = false;
         if (rejected) credentials::remove(serverUrl);
         set(rejected ? LoggedOut : Offline, text);
       });
     } catch (const std::exception& e) {
       const QString text = QString::fromUtf8(e.what());
-      onMain([this, text] { set(Offline, text); });
+      onMain([this, text] {
+        restoring_ = false;
+        set(Offline, text);
+      });
     }
   });
 }
@@ -153,5 +163,6 @@ void Session::logout() {
   username_.clear();
   admin_ = false;
   eosFeatures_ = false;
+  restoring_ = false;
   set(LoggedOut);
 }

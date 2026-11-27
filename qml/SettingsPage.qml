@@ -113,6 +113,71 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 1
+            color: Theme.line
+        }
+
+        ColumnLayout {
+            spacing: 10
+
+            Text {
+                text: "Account"
+                color: Theme.text
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+            }
+
+            GridLayout {
+                columns: 2
+                columnSpacing: 24
+                rowSpacing: 6
+
+                Text { text: "Server"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
+                Text { text: Session.serverUrl; color: Theme.text; font.pixelSize: Theme.fontBody }
+
+                Text { text: "User"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
+                Text {
+                    text: Session.username + (Session.admin ? "  (admin)" : "")
+                    color: Theme.text
+                    font.pixelSize: Theme.fontBody
+                }
+
+                Text { text: "Server type"; color: Theme.textDim; font.pixelSize: Theme.fontBody }
+                Text {
+                    text: Session.eosFeatures ? "eos (extended API available)" : "OpenSubsonic (standard API only)"
+                    color: Theme.text
+                    font.pixelSize: Theme.fontBody
+                }
+            }
+
+            AbstractButton {
+                id: logoutButton
+                Layout.topMargin: 4
+                implicitHeight: 34
+                implicitWidth: logoutLabel.implicitWidth + 32
+                hoverEnabled: true
+                // Forgets this device's key and returns to the login screen.
+                onClicked: {
+                    Player.clear()
+                    Session.logout()
+                }
+                background: Rectangle {
+                    color: logoutButton.hovered ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                    border.color: Qt.rgba(1, 1, 1, 0.28)
+                }
+                contentItem: Text {
+                    id: logoutLabel
+                    text: "Log out"
+                    color: Theme.text
+                    font.pixelSize: Theme.fontBody
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+
         Item { Layout.fillHeight: true }
     }
 }

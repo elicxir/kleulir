@@ -36,6 +36,7 @@ qt_add_qml_module(kleulir
     src/library.h src/library.cpp
     src/coverprovider.h src/coverprovider.cpp
     src/credentials.h src/credentials.cpp
+    src/cache.h src/cache.cpp
     src/audio.h src/audio.cpp
   QML_FILES
     qml/Main.qml

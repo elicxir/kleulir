@@ -15,15 +15,16 @@ int main(int argc, char* argv[]) {
   // The UI is dark only; this also makes Windows draw a dark title bar.
   QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 
+  // Reconnect with the key saved for the last server before the UI is built, so the
+  // first frame already knows a session is on its way and skips the login page.
+  Session::instance()->restore();
+
   QQmlApplicationEngine engine;
   engine.addImageProvider(QStringLiteral("cover"), new CoverProvider);
   QObject::connect(
       &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
       [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
   engine.loadFromModule("Kleulir", "Main");
-
-  // Reconnect with the key saved for the last server, if any.
-  Session::instance()->restore();
 
   // Development aid: KLEULIR_SCREENSHOT=<file.png> saves the window after it
   // has settled and exits, so a change can be checked without a person watching.
