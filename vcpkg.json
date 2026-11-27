@@ -1,0 +1,9 @@
+{
+  "name": "kleulir",
+  "version": "0.1.0",
+  "dependencies": [
+    "qtbase",
+    "qtdeclarative",
+    "qtsvg"
+  ]
+}
