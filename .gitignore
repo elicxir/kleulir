@@ -3,3 +3,5 @@ dist/
 vcpkg_installed/
 CMakeUserPresets.json
 .vs/
+# Third-party binaries placed here for packaging (docs/packaging.md)
+third_party/

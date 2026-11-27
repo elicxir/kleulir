@@ -112,3 +112,40 @@ qt_generate_deploy_qml_app_script(
   DEPLOY_TOOL_OPTIONS --no-compiler-runtime --no-system-d3d-compiler --no-opengl-sw
 )
 install(SCRIPT ${kleulir_deploy_script})
+
+# ---- what goes with a packaged kleulir (see docs/packaging.md) ----------------
+
+install(FILES LICENSE README.md DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES packaging/THIRD-PARTY.txt DESTINATION licenses)
+
+# The licence of every library that is shipped, from the vcpkg packages used.
+if(DEFINED VCPKG_INSTALLED_DIR)
+  foreach(_port
+      qtbase qtdeclarative qtsvg curl openssl zlib zstd brotli bzip2 freetype harfbuzz
+      icu libjpeg-turbo libpng md4c pcre2 double-conversion nlohmann-json)
+    set(_copyright "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/${_port}/copyright")
+    if(EXISTS "${_copyright}")
+      install(FILES "${_copyright}" DESTINATION licenses RENAME "${_port}.txt")
+    else()
+      message(WARNING "kleulir: no licence file found for ${_port}")
+    endif()
+  endforeach()
+endif()
+
+# mpv, when a copy has been put in third_party/mpv (not in Git): the player next to
+# kleulir.exe, its licence and source note under licenses/mpv.
+set(_mpv_dir "${CMAKE_SOURCE_DIR}/third_party/mpv")
+if(EXISTS "${_mpv_dir}/mpv.exe")
+  message(STATUS "kleulir: packaging will bundle mpv from ${_mpv_dir}")
+  foreach(_needed LICENSE.GPL SOURCE.txt)
+    if(NOT EXISTS "${_mpv_dir}/${_needed}")
+      message(WARNING "kleulir: third_party/mpv/${_needed} is missing; a bundled mpv must come with it")
+    endif()
+  endforeach()
+  install(PROGRAMS "${_mpv_dir}/mpv.exe" DESTINATION ${CMAKE_INSTALL_BINDIR})
+  install(DIRECTORY "${_mpv_dir}/" DESTINATION licenses/mpv
+          PATTERN "*.exe" EXCLUDE PATTERN "*.com" EXCLUDE PATTERN "*.dll" EXCLUDE)
+else()
+  message(STATUS "kleulir: no third_party/mpv/mpv.exe; the package will rely on an installed mpv")
+endif()
+

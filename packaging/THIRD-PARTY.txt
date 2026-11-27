@@ -1,0 +1,46 @@
+kleulir and the software distributed with it
+============================================
+
+kleulir
+-------
+Copyright (C) 2026 iselir (elicxir)
+Licence: GNU General Public License, version 3 or (at your option) any later
+version. The text is in LICENSE, next to kleulir.exe.
+Source: https://github.com/elicxir/kleulir
+
+kleulir contains libeos, the client library of the eos server.
+Source: https://github.com/elicxir/extended-opensubsonic-server
+
+mpv (only if mpv.exe is in this folder)
+---------------------------------------
+mpv is a separate program that kleulir starts to play audio. It is licensed
+under the GNU General Public License, version 2 or later, and includes FFmpeg
+and other libraries under their own licences.
+The licence text, the exact build that is included and where its source can be
+obtained are in the folder  licenses\mpv .
+Project: https://mpv.io/
+
+Qt
+--
+The Qt libraries (Qt6*.dll, the Qt6 folder) are used under the GNU Lesser
+General Public License, version 3. They are separate DLLs: you may replace them
+with your own builds of the same Qt version.
+Licence texts: qtbase.txt, qtdeclarative.txt, qtsvg.txt in this folder.
+Source: https://download.qt.io/official_releases/qt/  (the build recipe used is
+vcpkg's; see https://github.com/microsoft/vcpkg/tree/master/ports/qtbase)
+
+Other libraries
+---------------
+Each has its licence in this folder, in a file named after it:
+
+  curl               libcurl.dll
+  openssl            libcrypto-3-x64.dll
+  zlib, zstd, brotli, bzip2      compression
+  freetype, harfbuzz             text rendering
+  icu                            Unicode support
+  libjpeg-turbo, libpng          image decoding
+  md4c, pcre2, double-conversion used by Qt
+  nlohmann-json                  compiled into kleulir.exe
+
+These were built from source with vcpkg (https://github.com/microsoft/vcpkg);
+each port's recipe there names the exact upstream source.

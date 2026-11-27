@@ -9,6 +9,8 @@
 #include <QStandardPaths>
 #include <QTimer>
 
+#include <windows.h>
+
 namespace {
 
 const int kTimePosRequest = 1;
@@ -16,6 +18,24 @@ const int kTimePosRequest = 1;
 void trace(const QString& text) {
   static const bool on = qEnvironmentVariableIsSet("KLEULIR_TRACE_AUDIO");
   if (on) qInfo().noquote() << "mpv  " << text;
+}
+
+// A job that ends its processes when kleulir goes away, however that happens:
+// mpv must not keep running (and holding the audio device) after a crash.
+void endWithKleulir(qint64 pid) {
+  static const HANDLE job = [] {
+    const HANDLE handle = CreateJobObjectW(nullptr, nullptr);
+    if (!handle) return handle;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    SetInformationJobObject(handle, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
+    return handle;  // Kept open for the life of kleulir; Windows closes it at exit.
+  }();
+  if (!job || pid <= 0) return;
+  if (const HANDLE process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, FALSE, DWORD(pid))) {
+    AssignProcessToJobObject(job, process);
+    CloseHandle(process);
+  }
 }
 
 }  // namespace
@@ -30,7 +50,7 @@ QString MpvBackend::findExecutable() {
     if (QFileInfo::exists(candidate)) return candidate;
   }
 
-  const QString onPath = QStandardPaths::findExecutable("mpv");
+  const QString onPath = QStandardPaths::findExecutable("mpv.exe");
   if (!onPath.isEmpty()) return onPath;
 
   QStringList folders;
@@ -39,7 +59,7 @@ QString MpvBackend::findExecutable() {
     if (base.isEmpty()) continue;
     folders << base + "/MPV Player" << base + "/mpv" << base + "/Programs/mpv";
   }
-  return QStandardPaths::findExecutable("mpv", folders);
+  return QStandardPaths::findExecutable("mpv.exe", folders);
 }
 
 MpvBackend::MpvBackend(const QString& executable, QObject* parent) : AudioBackend(parent) {
@@ -77,6 +97,7 @@ MpvBackend::MpvBackend(const QString& executable, QObject* parent) : AudioBacken
     fail(QStringLiteral("mpv exited."));
   });
   process_->start();
+  endWithKleulir(process_->processId());
 
   socket_ = new QLocalSocket(this);
   connect(socket_, &QLocalSocket::connected, this, [this] {
