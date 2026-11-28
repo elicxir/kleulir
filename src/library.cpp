@@ -1,9 +1,12 @@
 #include "library.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QHash>
 #include <QJSEngine>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLocale>
 #include <QTimer>
 
 #include "cache.h"
@@ -38,6 +41,9 @@ QVariantMap trackMap(const Song& s, const QString& work) {
       {"id", qs(s.id)},
       {"title", qs(s.title)},
       {"artist", qs(s.display_artist.empty() ? s.artist : s.display_artist)},
+      // The first artist's page is where a click on the name goes.
+      {"artistId", qs(!s.artists.empty() && !s.artists[0].id.empty() ? s.artists[0].id : s.artist_id)},
+      {"artistName", qs(!s.artists.empty() && !s.artists[0].name.empty() ? s.artists[0].name : s.artist)},
       {"duration", s.duration},
       {"coverArt", qs(s.cover_art)},
       {"work", work},
@@ -45,6 +51,8 @@ QVariantMap trackMap(const Song& s, const QString& work) {
       {"albumId", qs(s.album_id)},
       {"starred", s.starred.has_value()},
       {"estimated", provenance == "rule" || provenance == "llm"},
+      // Other recordings of the same composition (eos only).
+      {"variations", s.variation_count},
       // ReplayGain of the track in dB; 0 when the file has none.
       {"gain", s.replay_gain ? s.replay_gain->track_gain.value_or(0.0) : 0.0},
   };
@@ -251,11 +259,13 @@ void Library::loadAlbum(const QString& id) {
       if (eos) {
         const auto detail = api->ext_album(id.toStdString());
         album = albumMap(detail.album);
-        // Grouped by the work each song belongs to; a song in two works shows in both.
-        for (const TitleGroup& group : api->album_titles(id.toStdString())) {
-          const QString work = group.title ? qs(group.title->name) : QString();
-          for (const Song& s : group.songs) tracks.append(trackMap(s, work));
-        }
+        // In the album's own order; each song is labelled with its works, so the page can
+        // head runs of songs from one work without moving any song.
+        QHash<QString, QStringList> works;
+        for (const TitleGroup& group : api->album_titles(id.toStdString()))
+          if (group.title)
+            for (const Song& s : group.songs) works[qs(s.id)].append(qs(group.title->name));
+        for (const Song& s : detail.album.songs) tracks.append(trackMap(s, works.value(qs(s.id)).join(" / ")));
       } else {
         const auto full = api->album(id.toStdString());
         album = albumMap(full);
@@ -426,6 +436,8 @@ void Library::refreshArtists() {
               {"name", qs(a.name)},
               {"albumCount", a.album_count},
               {"index", qs(group.name)},
+              // The artist's picture; empty for most (the server has one only when given).
+              {"coverArt", qs(a.cover_art)},
           });
         }
       }
@@ -452,7 +464,8 @@ void Library::loadArtist(const QString& id) {
       const auto artist = api->artist(id.toStdString());
       QVariantList albums;
       for (const Album& a : artist.albums) albums.append(albumMap(a));
-      const QVariantMap map{{"id", id}, {"name", qs(artist.name)}, {"albums", albums}};
+      const QVariantMap map{
+          {"id", id}, {"name", qs(artist.name)}, {"albums", albums}, {"coverArt", qs(artist.cover_art)}};
       deliver(api, [this, id, map, albums] {
         absorbStars(albums);
         emit artistLoaded(id, map);
@@ -768,7 +781,9 @@ void Library::loadVersions(const QString& songId) {
         map["compositionName"] = qs(v.composition->name);
         map["composers"] = names(v.composition->composers);
       }
-      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("Same arrangement")));
+      // The song asked about leads its own group, so the page lists every variation.
+      songs.append(trackMap(v.song, QStringLiteral("This arrangement")));
+      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("This arrangement")));
       for (const ArrangementSongs& group : v.arrangements)
         for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
       for (const RelatedItem& item : v.related) {
@@ -788,6 +803,309 @@ void Library::loadVersions(const QString& songId) {
     deliver(api, [this, songId, map, songs] {
       absorbStars(songs);
       emit versionsLoaded(songId, map);
+    });
+  });
+}
+
+// ---- song details ----
+
+namespace {
+
+QVariantMap textItem(const QString& text) { return {{"text", text}}; }
+
+QVariantMap navItem(const QString& text, const QVariantMap& nav) { return {{"text", text}, {"nav", nav}}; }
+
+QVariantMap urlItem(const QString& text, const QString& url) { return {{"text", text}, {"url", url}}; }
+
+QVariantMap rowOf(const QString& label, const QVariantList& items, const QString& note = {}, bool estimated = false) {
+  return {{"label", label}, {"items", items}, {"note", note}, {"estimated", estimated}};
+}
+
+// A row with one plain value; nothing when the value is empty.
+void addRow(QVariantList& rows, const QString& label, const QString& value) {
+  if (!value.isEmpty()) rows.append(rowOf(label, {textItem(value)}));
+}
+
+void addSection(QVariantList& sections, const QString& title, const QVariantList& rows) {
+  if (!rows.isEmpty()) sections.append(QVariantMap{{"title", title}, {"rows", rows}});
+}
+
+QVariantMap artistNav(const ArtistRef& a) {
+  return {{"page", "artist"}, {"artist", QVariantMap{{"id", qs(a.id)}, {"name", qs(a.name)}}}};
+}
+
+QVariantList artistItems(const std::vector<ArtistRef>& artists) {
+  QVariantList items;
+  for (const ArtistRef& a : artists) {
+    if (a.name.empty()) continue;
+    items.append(a.id.empty() ? textItem(qs(a.name)) : navItem(qs(a.name), artistNav(a)));
+  }
+  return items;
+}
+
+// "2026-11-28 21:47" in local time from the server's ISO 8601 (UTC); the text as it is
+// when it does not parse.
+QString localTime(const std::string& iso) {
+  if (iso.empty()) return {};
+  const QDateTime t = QDateTime::fromString(qs(iso), Qt::ISODateWithMs);
+  return t.isValid() ? t.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")) : qs(iso);
+}
+
+QString sizeText(int64_t bytes) {
+  if (bytes <= 0) return {};
+  const QLocale c = QLocale::c();
+  if (bytes < 1024 * 1024) return c.toString(bytes / 1024.0, 'f', 0) + QStringLiteral(" KB");
+  return c.toString(bytes / (1024.0 * 1024.0), 'f', 1) + QStringLiteral(" MB");
+}
+
+QString capitalized(const QString& s) { return s.left(1).toUpper() + s.mid(1); }
+
+QString roleLabel(const Contributor& c) {
+  if (c.role == "performer") return c.sub_role.empty() ? QStringLiteral("Performer") : capitalized(qs(c.sub_role));
+  if (!c.sub_role.empty()) return capitalized(qs(c.role)) + " (" + qs(c.sub_role) + ")";
+  return capitalized(qs(c.role));
+}
+
+QString gainText(const std::optional<double>& gain, const std::optional<double>& peak) {
+  if (!gain && !peak) return {};
+  QStringList parts;
+  if (gain) parts << (*gain > 0 ? QStringLiteral("+") : QString()) + QString::number(*gain, 'f', 2) + QStringLiteral(" dB");
+  if (peak) parts << QStringLiteral("peak ") + QString::number(*peak, 'f', 3);
+  return parts.join(QStringLiteral(" · "));
+}
+
+bool estimated(const std::string& provenance) { return provenance == "rule" || provenance == "llm"; }
+
+// Where a link came from, in a few words: "Tag", "Manual", or for an estimate what it
+// rests on, how sure it is and the rule that made it.
+QString linkNote(const LinkInfo& l) {
+  if (l.provenance == "tag") return QStringLiteral("Tag");
+  if (l.provenance == "manual") return QStringLiteral("Manual");
+  const std::string origin = l.origin.value_or(l.provenance == "llm" ? "llm" : "");
+  QStringList parts;
+  parts << (origin == "external" ? QStringLiteral("Estimated from an outside database")
+            : origin == "audio"  ? QStringLiteral("Estimated from the audio")
+            : origin == "name"   ? QStringLiteral("Estimated from names")
+            : origin == "llm"    ? QStringLiteral("Estimated by a language model")
+                                 : QStringLiteral("Estimated"));
+  if (l.confidence) parts << QString::number(qRound(*l.confidence * 100)) + QStringLiteral("%");
+  if (l.rule && !l.rule->empty()) parts << qs(*l.rule);
+  return parts.join(QStringLiteral(" · "));
+}
+
+QString provenanceNote(const std::string& provenance) {
+  if (provenance == "tag") return QStringLiteral("Tag");
+  if (provenance == "manual") return QStringLiteral("Manual");
+  return estimated(provenance) ? QStringLiteral("Estimated") : QString();
+}
+
+// What every server tells about a song. `albumNav` is the entry the album name opens;
+// `virtualAlbums` are rows that go right under the album (eos only).
+QVariantList songSections(const Song& s, const QVariantMap& albumNav, const QVariantList& virtualAlbums = {}) {
+  QVariantList sections, rows;
+
+  addRow(rows, QStringLiteral("Title"), qs(s.title));
+  QVariantList artists = artistItems(s.artists);
+  if (artists.isEmpty()) {
+    const QString name = qs(s.display_artist.empty() ? s.artist : s.display_artist);
+    if (!name.isEmpty())
+      artists.append(s.artist_id.empty() ? textItem(name) : navItem(name, artistNav({s.artist_id, name.toStdString()})));
+  }
+  if (!artists.isEmpty()) rows.append(rowOf(QStringLiteral("Artist"), artists));
+  if (!s.album.empty())
+    rows.append(rowOf(QStringLiteral("Album"),
+                      {albumNav.isEmpty() ? textItem(qs(s.album)) : navItem(qs(s.album), albumNav)}));
+  rows.append(virtualAlbums);
+  QVariantList albumArtists = artistItems(s.album_artists);
+  if (albumArtists.isEmpty() && !s.display_album_artist.empty()) albumArtists.append(textItem(qs(s.display_album_artist)));
+  if (!albumArtists.isEmpty()) rows.append(rowOf(QStringLiteral("Album artist"), albumArtists));
+  QStringList position;
+  if (s.disc_number) position << QStringLiteral("Disc %1").arg(*s.disc_number);
+  if (s.track) position << QStringLiteral("Track %1").arg(*s.track);
+  addRow(rows, QStringLiteral("Position"), position.join(QStringLiteral(" · ")));
+  if (s.year) addRow(rows, QStringLiteral("Year"), QString::number(*s.year));
+  QStringList genres;
+  for (const std::string& g : s.genres) genres << qs(g);
+  if (genres.isEmpty() && !s.genre.empty()) genres << qs(s.genre);
+  addRow(rows, QStringLiteral("Genre"), genres.join(QStringLiteral(", ")));
+  if (s.duration > 0) {
+    const int m = s.duration / 60, sec = s.duration % 60;
+    addRow(rows, QStringLiteral("Length"), QStringLiteral("%1:%2").arg(m).arg(sec, 2, 10, QLatin1Char('0')));
+  }
+  addSection(sections, QStringLiteral("Song"), rows);
+
+  // People by what they did, in the order the server gives them.
+  rows.clear();
+  QStringList labels;
+  QHash<QString, QVariantList> people;
+  for (const Contributor& c : s.contributors) {
+    if (c.artist.name.empty()) continue;
+    const QString label = roleLabel(c);
+    if (!people.contains(label)) labels << label;
+    people[label].append(c.artist.id.empty() ? textItem(qs(c.artist.name))
+                                              : navItem(qs(c.artist.name), artistNav(c.artist)));
+  }
+  for (const QString& label : labels) rows.append(rowOf(label, people[label]));
+  if (!people.contains(QStringLiteral("Composer"))) addRow(rows, QStringLiteral("Composer"), qs(s.display_composer));
+  addSection(sections, QStringLiteral("Credits"), rows);
+
+  rows.clear();
+  addRow(rows, QStringLiteral("Plays"), QString::number(s.play_count));
+  addRow(rows, QStringLiteral("Last played"), localTime(s.played.value_or("")));
+  addRow(rows, QStringLiteral("Starred"), localTime(s.starred.value_or("")));
+  if (s.user_rating && *s.user_rating > 0)
+    addRow(rows, QStringLiteral("Rating"), QString(*s.user_rating, QChar(0x2605)) + QString(5 - *s.user_rating, QChar(0x2606)));
+  addSection(sections, QStringLiteral("Listening"), rows);
+  return sections;
+}
+
+// The audio and the file, as far as a song from /rest says.
+QVariantList fileRows(const Song& s) {
+  QVariantList rows;
+  QStringList format;
+  if (!s.suffix.empty()) format << qs(s.suffix).toUpper();
+  if (s.bit_depth && *s.bit_depth > 0) format << QStringLiteral("%1 bit").arg(*s.bit_depth);
+  if (s.sampling_rate && *s.sampling_rate > 0)
+    format << QString::number(*s.sampling_rate / 1000.0, 'g', 4) + QStringLiteral(" kHz");
+  if (s.channel_count && *s.channel_count > 0)
+    format << (*s.channel_count == 1 ? QStringLiteral("Mono")
+               : *s.channel_count == 2 ? QStringLiteral("Stereo")
+                                       : QStringLiteral("%1 channels").arg(*s.channel_count));
+  if (s.bit_rate && *s.bit_rate > 0) format << QStringLiteral("%1 kbps").arg(*s.bit_rate);
+  addRow(rows, QStringLiteral("Format"), format.join(QStringLiteral(" · ")));
+  addRow(rows, QStringLiteral("Size"), sizeText(s.size));
+  if (s.replay_gain) {
+    addRow(rows, QStringLiteral("Track gain"), gainText(s.replay_gain->track_gain, s.replay_gain->track_peak));
+    addRow(rows, QStringLiteral("Album gain"), gainText(s.replay_gain->album_gain, s.replay_gain->album_peak));
+  }
+  return rows;
+}
+
+}  // namespace
+
+void Library::loadSong(const QString& id) {
+  auto api = Session::instance()->api();
+  if (!api) {
+    whenReady([this, id] { loadSong(id); });
+    return;
+  }
+  const bool eos = Session::instance()->eosFeatures();
+  const bool detailed = Session::instance()->hasFeature(QStringLiteral("songDetail"));
+  Session::async([this, api, id, eos, detailed] {
+    QVariantMap map{{"id", id}};
+    try {
+      SongDetail d;
+      if (detailed)
+        d = api->song_detail(id.toStdString());
+      else
+        d.song = eos ? api->ext_song(id.toStdString()) : api->song(id.toStdString());
+      const Song& s = d.song;
+
+      map["title"] = qs(s.title);
+      map["artist"] = qs(s.display_artist.empty() ? s.artist : s.display_artist);
+      map["album"] = qs(s.album);
+      map["albumId"] = qs(s.album_id);
+      map["coverArt"] = qs(s.cover_art);
+      map["duration"] = s.duration;
+      map["track"] = trackMap(s, QString());
+
+      QVariantMap albumNav;
+      if (detailed)
+        albumNav = {{"page", "album"}, {"album", albumMap(d.album)}};
+      else if (!s.album_id.empty())
+        albumNav = {{"page", "album"},
+                    {"album", QVariantMap{{"id", qs(s.album_id)}, {"title", qs(s.album)}, {"artist", QString()},
+                                          {"year", 0}, {"kind", "physical"}, {"coverArt", qs(s.cover_art)}}}};
+      // Each virtual album the song is on, with its place there and where that came from.
+      QVariantList virtualAlbums;
+      for (const SongDetail::VirtualAlbumLink& v : d.virtual_albums) {
+        QStringList about;
+        if (v.disc_number) about << QStringLiteral("Disc %1").arg(*v.disc_number);
+        if (v.track_number) about << QStringLiteral("Track %1").arg(*v.track_number);
+        about << linkNote(v.link);
+        virtualAlbums.append(rowOf(QStringLiteral("Virtual album"),
+                                   {navItem(qs(v.album.name), QVariantMap{{"page", "album"}, {"album", albumMap(v.album)}})},
+                                   about.join(QStringLiteral(" · ")), estimated(v.link.provenance)));
+      }
+      QVariantList sections = songSections(s, albumNav, virtualAlbums);
+
+      // What the music is: composition, arrangement, works. Only an eos server knows.
+      QVariantList music;
+      if (d.composition) {
+        const QVariantMap nav{{"page", "composition"},
+                              {"composition", QVariantMap{{"id", qs(d.composition->id)}, {"name", qs(d.composition->name)}}}};
+        const bool guess = d.arrangement_link && estimated(d.arrangement_link->provenance);
+        music.append(rowOf(QStringLiteral("Composition"), {navItem(qs(d.composition->name), nav)},
+                           d.arrangement_link ? linkNote(*d.arrangement_link) : QString(), guess));
+        if (d.arrangement_link && d.arrangement_link->origin_ref && d.arrangement_link->origin_ref->starts_with("http"))
+          music.append(rowOf(QStringLiteral("Source"), {urlItem(qs(*d.arrangement_link->origin_ref),
+                                                                qs(*d.arrangement_link->origin_ref))}));
+        const QVariantList composers = artistItems(d.composition->composers);
+        if (!composers.isEmpty())
+          music.append(rowOf(QStringLiteral("Composed by"), composers, provenanceNote(d.composition->provenance),
+                             estimated(d.composition->provenance)));
+        if (d.composition->music_brainz_work_id && !d.composition->music_brainz_work_id->empty())
+          music.append(rowOf(QStringLiteral("MusicBrainz work"),
+                             {urlItem(qs(*d.composition->music_brainz_work_id),
+                                      "https://musicbrainz.org/work/" + qs(*d.composition->music_brainz_work_id))}));
+      }
+      if (d.arrangement) {
+        music.append(rowOf(QStringLiteral("Arrangement"), {textItem(arrangementLabel(*d.arrangement))},
+                           provenanceNote(d.arrangement->provenance), estimated(d.arrangement->provenance)));
+        const QVariantList arrangers = artistItems(d.arrangement->arrangers);
+        if (!arrangers.isEmpty()) music.append(rowOf(QStringLiteral("Arranged by"), arrangers));
+      }
+      for (const SongDetail::TitleLink& t : d.titles) {
+        QStringList about;
+        if (t.title.kind && !t.title.kind->empty()) about << capitalized(qs(*t.title.kind));
+        if (t.title.year && *t.title.year > 0) about << QString::number(*t.title.year);
+        about << linkNote(t.link);
+        const QVariantMap nav{{"page", "work"}, {"work", QVariantMap{{"id", qs(t.title.id)}, {"name", qs(t.title.name)}}}};
+        music.append(rowOf(QStringLiteral("Work"), {navItem(qs(t.title.name), nav)}, about.join(QStringLiteral(" · ")),
+                           estimated(t.link.provenance)));
+      }
+      if (s.performance_kind) addRow(music, QStringLiteral("Performance"), capitalized(qs(*s.performance_kind)));
+      if (s.recorded_date) addRow(music, QStringLiteral("Recorded"), qs(*s.recorded_date));
+      if (!music.isEmpty())
+        sections.insert(qMin<qsizetype>(2, sections.size()), QVariantMap{{"title", "Music"}, {"rows", music}});
+
+      QVariantList file = fileRows(s);
+      const QString path = detailed ? qs(d.file.path) : qs(s.path);
+      addRow(file, QStringLiteral("Path"), path);
+      if (detailed) {
+        addRow(file, QStringLiteral("Library"), qs(d.file.library));
+        addRow(file, QStringLiteral("Added"), localTime(d.file.added));
+        addRow(file, QStringLiteral("File changed"), localTime(d.file.modified));
+        addRow(file, QStringLiteral("Cover in file"), d.file.has_embedded_art ? QStringLiteral("Yes") : QStringLiteral("No"));
+        addRow(file, QStringLiteral("Audio MD5"), qs(d.file.audio_md5.value_or("")));
+        if (d.file.music_brainz_recording_id && !d.file.music_brainz_recording_id->empty())
+          file.append(rowOf(QStringLiteral("MusicBrainz recording"),
+                            {urlItem(qs(*d.file.music_brainz_recording_id),
+                                     "https://musicbrainz.org/recording/" + qs(*d.file.music_brainz_recording_id))}));
+      } else {
+        addRow(file, QStringLiteral("Added"), localTime(s.created));
+        if (!s.music_brainz_id.empty())
+          file.append(rowOf(QStringLiteral("MusicBrainz recording"),
+                            {urlItem(qs(s.music_brainz_id), "https://musicbrainz.org/recording/" + qs(s.music_brainz_id))}));
+      }
+      addRow(file, QStringLiteral("ID"), qs(s.id));
+      addSection(sections, QStringLiteral("File"), file);
+
+      QVariantList tags;
+      for (const SongTag& t : d.tags) {
+        QStringList values;
+        for (const std::string& v : t.values) values << qs(v);
+        addRow(tags, qs(t.key), values.join(QStringLiteral("; ")));
+      }
+      addSection(sections, QStringLiteral("Tags"), tags);
+
+      map["sections"] = sections;
+    } catch (const std::exception& e) {
+      map["error"] = describe(e);
+    }
+    deliver(api, [this, id, map] {
+      if (map.contains("track")) absorbStars({map["track"]});
+      emit songLoaded(id, map);
     });
   });
 }
@@ -880,6 +1198,9 @@ void Library::loadGraph(const QString& seed, const QString& mode) {
       q.depth = 2;
       q.include = {"composition", "relation", "title"};
       q.limit = 120;
+      // "sure": tags, people, and what an outside database (MusicBrainz) states; name and
+      // audio matches are left out.
+      if (mode == "sure") q.origins = std::vector<std::string>{"external", "tag", "manual"};
     }
     QVariantMap map;
     QVariantList nodes, edges, songs;

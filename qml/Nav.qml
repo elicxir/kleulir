@@ -6,6 +6,7 @@ import Kleulir
 // An entry is { page, album? | artist? | playlist? | ... }; page is one of albums,
 // album, artists, artist, starred, playlists, playlist, search, settings, and on an
 // eos server folders, folder, works, work, compositions, composition, versions, graph.
+// song (one song's details, { song: { id, title } }) is there on every server.
 QtObject {
     id: root
 
@@ -33,7 +34,7 @@ QtObject {
             return a.work.id === b.work.id
         if (a.page === "composition")
             return a.composition.id === b.composition.id
-        if (a.page === "versions")
+        if (a.page === "versions" || a.page === "song")
             return a.song.id === b.song.id
         if (a.page === "graph")
             return a.seed === b.seed && a.mode === b.mode
@@ -72,6 +73,16 @@ QtObject {
             return
         const found = Library.albums.find(a => a.id === id)
         openAlbum(found || { id: id, title: title || "", artist: "", year: 0, kind: "physical", coverArt: "" })
+    }
+
+    function openArtist(id, name) {
+        if (id)
+            go({ page: "artist", artist: { id: id, name: name || "" } })
+    }
+
+    function openSong(id, title) {
+        if (id)
+            go({ page: "song", song: { id: id, title: title || "" } })
     }
 
     function search(text) {

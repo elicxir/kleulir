@@ -59,6 +59,7 @@ Item {
         tracks: root.songs
         showAlbum: true
         groupByWork: true
+        showVariations: false   // every song here is a variation
 
         header: Item {
             width: list.width - list.sideMargin
@@ -79,13 +80,11 @@ Item {
                         font.weight: Font.DemiBold
                         font.letterSpacing: 0.6
                     }
-                    Text {
+                    CopyText {
                         Layout.fillWidth: true
                         text: root.song ? root.song.title : root.composition ? root.composition.name : ""
-                        color: Theme.text
                         font.pixelSize: 32
                         font.weight: Font.Bold
-                        elide: Text.ElideRight
                     }
                     Text {
                         Layout.fillWidth: true

@@ -5,15 +5,17 @@ import Kleulir
 
 // What one song (or composition, work, ...) is linked to, drawn as a graph.
 //   Related:      the composition and the work it belongs to, and their other songs
+//   Sure links:   the same, keeping only the links MusicBrainz (or a tag or a person) backs
 //   Sounds alike: the songs whose audio is closest (when the server has similarity)
 // The layout is a small force simulation: linked nodes pull together, all nodes push
 // apart, the centre stays put. Wheel to zoom, drag the background to pan, click a node
-// for its details, double-click a song to play it or anything else to centre on it.
+// for its details, double-click a song to play it or anything else to expand it.
+// Expanding a node adds its neighbours to the graph on screen; "Centre here" starts afresh.
 Item {
     id: root
     property string seed: ""         // node id, e.g. "song:abc"
     property string seedLabel: ""
-    property string mode: "related"  // related | similar
+    property string mode: "related"  // related | sure | similar
 
     property var nodes: []
     property var edges: []
@@ -21,6 +23,7 @@ Item {
     property bool loading: false
     property bool truncated: false
     property string selected: ""
+    property var expanding: ({})     // node id -> true while its neighbours load
 
     // Positions live in a plain array (world coordinates, centre at 0,0); `revision`
     // tells the bindings when they moved.
@@ -38,7 +41,19 @@ Item {
             return
         loading = true
         error = ""
+        expanding = {}
         Library.loadGraph(seed, mode)
+    }
+
+    // Adds `node`'s neighbourhood to the graph on screen.
+    function expand(node) {
+        if (!node || expanding[node.id])
+            return
+        const e = Object.assign({}, expanding)
+        e[node.id] = true
+        expanding = e
+        error = ""
+        Library.loadGraph(node.id, mode)
     }
     // Seed and mode arrive one after the other when the page opens: ask once.
     onSeedChanged: Qt.callLater(request)
@@ -46,7 +61,8 @@ Item {
     Component.onCompleted: Qt.callLater(request)
 
     function centreOn(node) {
-        Nav.go({ page: "graph", seed: node.id, label: node.label, mode: node.type === "song" ? root.mode : "related" })
+        Nav.go({ page: "graph", seed: node.id, label: node.label,
+                 mode: node.type === "song" || root.mode !== "similar" ? root.mode : "related" })
     }
 
     function nodeById(id) {
@@ -57,7 +73,19 @@ Item {
     Connections {
         target: Library
         function onGraphLoaded(seed, mode, data) {
-            if (seed !== root.seed || mode !== root.mode)
+            if (mode !== root.mode)
+                return
+            if (root.expanding[seed]) {
+                const e = Object.assign({}, root.expanding)
+                delete e[seed]
+                root.expanding = e
+                if (data.error)
+                    root.error = data.error
+                else
+                    root.merge(seed, data.nodes || [], data.edges || [])
+                return
+            }
+            if (seed !== root.seed)
                 return
             root.loading = false
             root.error = data.error || ""
@@ -95,6 +123,63 @@ Item {
         step = 0
         if (nodes.length > 1)
             ticker.start()
+        revision++
+    }
+
+    // The same link found from either end: undirected ones are keyed with their ends sorted.
+    function edgeKey(e) {
+        const ends = e.directed || e.from < e.to ? [e.from, e.to] : [e.to, e.from]
+        return ends.concat([e.type, e.label || ""]).join("|")
+    }
+
+    // Adds an expansion around `anchorId`: the nodes already there stay where they are, the
+    // new ones start on an arc around the anchor, opening away from the centre.
+    function merge(anchorId, newNodes, newEdges) {
+        const a = indexOf[anchorId]
+        if (a === undefined)
+            return
+        const index = Object.assign({}, indexOf)
+        const list = nodes.slice()
+        const p = pos
+        const ax = p[a].x, ay = p[a].y
+        const added = newNodes.filter(n => index[n.id] === undefined)
+        const atCentre = Math.abs(ax) + Math.abs(ay) < 1
+        const base = Math.atan2(ay, ax)
+        added.forEach((n, k) => {
+            const ang = atCentre ? 2 * Math.PI * k / added.length
+                      : added.length === 1 ? base : base - 1.3 + 2.6 * k / (added.length - 1)
+            const r = 100 + 80 * Math.max(0, n.distance - 1)
+            index[n.id] = list.length
+            list.push(n)
+            p.push({ x: ax + r * Math.cos(ang), y: ay + r * Math.sin(ang), dx: 0, dy: 0 })
+        })
+        // A node is expanded once any answer had all its neighbours; the anchor now has.
+        for (const n of newNodes) {
+            const i = index[n.id]
+            if ((n.expanded || n.id === anchorId) && !list[i].expanded)
+                list[i] = Object.assign({}, list[i], { expanded: true })
+        }
+        const seen = {}
+        for (const e of edges)
+            seen[edgeKey(e)] = true
+        const es = edges.slice()
+        for (const e of newEdges) {
+            const k = edgeKey(e)
+            if (index[e.from] !== undefined && index[e.to] !== undefined && !seen[k]) {
+                seen[k] = true
+                es.push(e)
+            }
+        }
+        indexOf = index
+        pos = p
+        nodes = list
+        edges = es
+        selected = anchorId
+        // Settle gently: the layout on screen should mostly stay as it was.
+        if (added.length > 0) {
+            step = steps - 160
+            ticker.start()
+        }
         revision++
     }
 
@@ -331,8 +416,8 @@ Item {
                     onDoubleClicked: {
                         if (chip.modelData.track)
                             Player.playTracks([chip.modelData.track], null, 0)
-                        else if (!chip.isSeed)
-                            root.centreOn(chip.modelData)
+                        else if (!chip.modelData.expanded)
+                            root.expand(chip.modelData)
                     }
                 }
             }
@@ -341,6 +426,7 @@ Item {
 
     TrackMenu {
         id: menu
+        showGraph: track => root.expand(root.nodeById("song:" + track.id))
     }
 
     // ---- header ---------------------------------------------------------------------
@@ -363,7 +449,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: 4
                 Text {
-                    text: root.mode === "similar" ? "SOUNDS LIKE" : "RELATED TO"
+                    text: root.mode === "similar" ? "SOUNDS LIKE" : root.mode === "sure" ? "SURELY RELATED TO" : "RELATED TO"
                     color: Theme.textDim
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
@@ -379,10 +465,11 @@ Item {
                 }
                 Text {
                     text: root.loading ? "Loading…"
+                        : Object.keys(root.expanding).length > 0 ? "Adding…"
                         : root.error ? root.error
                         : root.nodes.length <= 1 ? (root.mode === "similar" ? "No similar songs are known for this one yet."
                                                                             : "Nothing is linked to this yet.")
-                        : root.truncated ? root.nodes.length + " items, the nearest ones; centre on one to see further."
+                        : root.truncated ? root.nodes.length + " items, the nearest ones; expand one to see further."
                         : root.nodes.length + " items"
                     color: root.error ? Theme.estimated : Theme.textFaint
                     font.pixelSize: Theme.fontSmall
@@ -390,9 +477,10 @@ Item {
             }
 
             Segmented {
-                visible: root.canSimilar
+                visible: !!root.seed
                 Layout.alignment: Qt.AlignTop
-                options: [{ key: "related", label: "Related" }, { key: "similar", label: "Sounds alike" }]
+                options: [{ key: "related", label: "Related" }, { key: "sure", label: "Sure links" }]
+                         .concat(root.canSimilar ? [{ key: "similar", label: "Sounds alike" }] : [])
                 current: root.mode
                 onPicked: key => root.mode = key
             }
@@ -477,6 +565,8 @@ Item {
                             out.push({ text: "Play", run: () => Player.playTracks([n.track], null, 0) })
                             out.push({ text: "Play next", run: () => Player.playNextMany([n.track], null) })
                         }
+                        if (!n.expanded)
+                            out.push({ text: "Expand", run: () => root.expand(n) })
                         if (n.id !== root.seed)
                             out.push({ text: "Centre here", run: () => root.centreOn(n) })
                         if (n.type === "composition")

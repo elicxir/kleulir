@@ -19,6 +19,10 @@ class App : public QObject {
   Q_PROPERTY(QStringList fontFamilies READ fontFamilies CONSTANT)
   // The saved scale or font differs from what this run started with.
   Q_PROPERTY(bool restartRequired READ restartRequired NOTIFY changed)
+  // How far one notch of the mouse wheel moves a list, in lines (a line is 24 pixels).
+  // 0 follows the Windows setting, which is systemWheelLines. Applies at once.
+  Q_PROPERTY(int wheelLines READ wheelLines WRITE setWheelLines NOTIFY changed)
+  Q_PROPERTY(int systemWheelLines READ systemWheelLines CONSTANT)
   // Closing the window hides it to the tray instead of quitting.
   Q_PROPERTY(bool closeToTray READ closeToTray WRITE setCloseToTray NOTIFY changed)
   // Start with the window hidden (only with closeToTray).
@@ -33,6 +37,8 @@ class App : public QObject {
   static void applyScale();
   // Call right after QGuiApplication is created.
   static void applyFont();
+  // Call right after QGuiApplication is created.
+  static void applyWheel();
 
   // Only one kleulir runs per user. Returns true when another one is already
   // running: it has been asked to show its window, and this process should exit.
@@ -45,12 +51,17 @@ class App : public QObject {
   void setFontFamily(const QString& family);
   QStringList fontFamilies() const;
   bool restartRequired() const;
+  int wheelLines() const;
+  void setWheelLines(int lines);
+  int systemWheelLines() const;
   bool closeToTray() const;
   void setCloseToTray(bool on);
   bool startWithWindows() const;
   void setStartWithWindows(bool on);
 
   Q_INVOKABLE void restart();
+  // Puts `text` on the clipboard.
+  Q_INVOKABLE void copyText(const QString& text) const;
 
   // Small state files under %LOCALAPPDATA% (the play queue). `name` is a plain
   // word; the text is whatever the caller wants back.

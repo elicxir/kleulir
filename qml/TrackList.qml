@@ -14,6 +14,7 @@ ListView {
     property bool groupByWork: false   // section headers per work (album pages)
     property bool showAlbum: false     // show each song's album (search results)
     property string playlistId: ""     // set on a playlist's page
+    property bool showVariations: true // mark songs that have other recordings (VAR)
     property real sideMargin: 12       // room kept for the scroll bar
 
     clip: true
@@ -28,7 +29,7 @@ ListView {
         rows.clear()
         tracks.forEach(t => rows.append({
             trackId: t.id, title: t.title, artist: t.artist, albumTitle: t.album || "",
-            duration: t.duration, work: t.work || "", estimated: !!t.estimated
+            duration: t.duration, work: t.work || "", variations: t.variations || 0
         }))
     }
 
@@ -129,7 +130,11 @@ ListView {
 
     section.property: groupByWork ? "work" : ""
     section.delegate: Item {
-        required property string section
+        // `section` comes from the context, not through a required property: this
+        // file's root is the ListView, which has a `section` of its own, and Qt then
+        // fails to update a required one when it reuses a heading that scrolled out
+        // of view (Disc 3 came up headed "Disc 1").
+        readonly property string name: section
         width: list.width - list.sideMargin
         height: 44
         Text {
@@ -137,8 +142,8 @@ ListView {
             anchors.leftMargin: Theme.gap
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
-            text: parent.section.length > 0 ? parent.section : "No work"
-            color: parent.section.length > 0 ? Theme.text : Theme.textFaint
+            text: parent.name.length > 0 ? parent.name : "No work"
+            color: parent.name.length > 0 ? Theme.text : Theme.textFaint
             font.pixelSize: Theme.fontSmall
             font.weight: Font.DemiBold
             font.letterSpacing: 0.4
@@ -161,11 +166,12 @@ ListView {
         required property string artist
         required property string albumTitle
         required property real duration
-        required property bool estimated
+        required property int variations
         readonly property var track: index < list.tracks.length ? list.tracks[index] : null
         readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
         readonly property bool isSelected: list.isSelected(index)
-        readonly property bool hot: rowArea.containsMouse || starButton.hovered || moreButton.hovered
+        readonly property bool hot: rowArea.containsMouse || starButton.hovered || moreButton.hovered || variationsArea.containsMouse
+                                    || artistArea.containsMouse || albumArea.containsMouse
         readonly property bool starred: {
             Library.starRevision
             return Library.isStarred(trackId)
@@ -227,27 +233,81 @@ ListView {
                 font.pixelSize: 14
                 elide: Text.ElideRight
             }
+            // The song has other recordings (arrangements, performances); a click lists them.
             Rectangle {
-                visible: row.estimated
-                implicitWidth: estimatedLabel.implicitWidth + 12
+                visible: list.showVariations && row.variations > 0
+                implicitWidth: variationsLabel.implicitWidth + 12
                 implicitHeight: 18
-                color: "transparent"
-                border.color: Qt.rgba(Theme.estimated.r, Theme.estimated.g, Theme.estimated.b, 0.6)
+                color: variationsArea.containsMouse ? Theme.hover : "transparent"
+                border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.6)
                 Text {
-                    id: estimatedLabel
+                    id: variationsLabel
                     anchors.centerIn: parent
-                    text: "EST"
-                    color: Theme.estimated
+                    text: "VAR"
+                    color: Theme.accent
                     font.pixelSize: 10
                     font.weight: Font.DemiBold
                 }
+                MouseArea {
+                    id: variationsArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Nav.go({ page: "versions", song: row.track })
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: row.variations === 1 ? "1 other variation" : row.variations + " other variations"
+                }
             }
-            Text {
+            // Artist, and on lists across albums the album: each opens its page on a click.
+            RowLayout {
+                id: byline
                 Layout.preferredWidth: list.showAlbum ? 300 : 170
-                text: list.showAlbum && row.albumTitle.length > 0 ? row.artist + " · " + row.albumTitle : row.artist
-                color: Theme.textDim
-                font.pixelSize: Theme.fontBody
-                elide: Text.ElideRight
+                Layout.maximumWidth: list.showAlbum ? 300 : 170
+                spacing: 0
+                readonly property bool withAlbum: list.showAlbum && row.albumTitle.length > 0
+                readonly property bool artistLink: row.track !== null && !!row.track.artistId
+                readonly property bool albumLink: row.track !== null && !!row.track.albumId
+                Text {
+                    Layout.maximumWidth: byline.withAlbum ? 135 : 170
+                    text: row.artist
+                    color: artistArea.containsMouse ? Theme.text : Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                    font.underline: artistArea.containsMouse
+                    elide: Text.ElideRight
+                    MouseArea {
+                        id: artistArea
+                        anchors.fill: parent
+                        enabled: byline.artistLink
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Nav.openArtist(row.track.artistId, row.track.artistName)
+                    }
+                }
+                Text {
+                    visible: byline.withAlbum
+                    text: " · "
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
+                Text {
+                    visible: byline.withAlbum
+                    Layout.fillWidth: true
+                    text: row.albumTitle
+                    color: albumArea.containsMouse ? Theme.text : Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                    font.underline: albumArea.containsMouse
+                    elide: Text.ElideRight
+                    MouseArea {
+                        id: albumArea
+                        anchors.fill: parent
+                        enabled: byline.albumLink
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Nav.openAlbumId(row.track.albumId, row.albumTitle)
+                    }
+                }
+                Item { Layout.fillWidth: true; visible: !byline.withAlbum }
             }
             IconButton {
                 id: starButton

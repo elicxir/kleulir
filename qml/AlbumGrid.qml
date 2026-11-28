@@ -59,6 +59,10 @@ GridView {
             text: "Open album"
             onTriggered: Nav.openAlbum(albumMenu.album)
         }
+        PopupMenuItem {
+            text: "Copy title"
+            onTriggered: App.copyText(albumMenu.album.title)
+        }
     }
 
     clip: true

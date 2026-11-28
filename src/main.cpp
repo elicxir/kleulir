@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
   QGuiApplication::setOrganizationName("kleulir");
   QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/Kleulir/assets/kleulir.svg")));
   App::applyFont();
+  App::applyWheel();
 
   // One kleulir per user: a second launch shows the first one's window and exits.
   // (Screenshot runs are separate, so a check can run beside the real app.)

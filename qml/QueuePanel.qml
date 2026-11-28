@@ -89,6 +89,19 @@ Rectangle {
                 text: "Go to album"
                 onTriggered: Nav.openAlbumId(menu.entry.albumId, menu.entry.album)
             }
+            PopupMenuItem {
+                text: "Copy title"
+                onTriggered: App.copyText(menu.entry.title)
+            }
+            PopupMenuItem {
+                visible: menu.entry !== null && menu.entry.album.length > 0
+                text: "Copy album title"
+                onTriggered: App.copyText(menu.entry.album)
+            }
+            PopupMenuItem {
+                text: "Show details"
+                onTriggered: Nav.openSong(menu.entry.trackId, menu.entry.title)
+            }
         }
 
         ListView {

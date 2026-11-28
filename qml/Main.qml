@@ -179,6 +179,10 @@ ApplicationWindow {
         id: graphPage
         GraphPage {}
     }
+    Component {
+        id: songPage
+        SongPage {}
+    }
     function render() {
         const entry = Nav.current
         if (entry.page === "album")
@@ -211,6 +215,8 @@ ApplicationWindow {
             stack.replace(null, compositionPage, { composition: entry.composition })
         else if (entry.page === "versions")
             stack.replace(null, compositionPage, { song: entry.song })
+        else if (entry.page === "song")
+            stack.replace(null, songPage, { song: entry.song })
         else if (entry.page === "graph")
             stack.replace(null, graphPage, { seed: entry.seed, seedLabel: entry.label || "", mode: entry.mode || "related" })
         else
@@ -300,6 +306,10 @@ ApplicationWindow {
             const parts = demoGraph.substring(13).split(",")
             Nav.go({ page: "graph", seed: parts[0], label: "", mode: parts[1] || "related" })
         }
+        // `--demo-song=<song id>`: open that song's details.
+        const demoDetails = Qt.application.arguments.find(a => a.startsWith("--demo-song="))
+        if (demoDetails)
+            Nav.openSong(demoDetails.substring(12), "")
         // `--demo-search=<text>`: open the search page with that text.
         const demoSearch = Qt.application.arguments.find(a => a.startsWith("--demo-search="))
         if (demoSearch)

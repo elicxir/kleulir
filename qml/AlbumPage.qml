@@ -3,8 +3,9 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Kleulir
 
-// Album detail. Tracks are grouped by work (作品), as /ext/albums/{id}/titles
-// returns them; tracks without a work fall under an untitled group.
+// Album detail, in the album's track order. In a virtual album a run of tracks from one
+// work (作品) gets a heading, and tracks without a work fall under an untitled one; a
+// physical album is listed without headings.
 Item {
     id: root
     // Starts as the summary from the list (no tracks) and is replaced by the
@@ -59,7 +60,8 @@ Item {
         anchors.rightMargin: 12
         tracks: root.tracks
         album: root.album
-        groupByWork: true
+        // Only a virtual album is cut into works; a physical one stays one plain list.
+        groupByWork: !!root.album && root.album.kind === "virtual"
 
         header: Column {
             width: list.width - list.sideMargin
@@ -90,17 +92,14 @@ Item {
                         font.weight: Font.DemiBold
                         font.letterSpacing: 0.6
                     }
-                    Text {
+                    CopyText {
                         Layout.fillWidth: true
                         text: root.album ? root.album.title : ""
-                        color: Theme.text
                         font.pixelSize: 32
                         font.weight: Font.Bold
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 2
-                        elide: Text.ElideRight
                     }
-                    Text {
+                    CopyText {
+                        Layout.fillWidth: true
                         text: root.album
                               ? [root.album.artist, root.album.year > 0 ? root.album.year : "",
                                  root.loadError.length > 0 ? root.loadError

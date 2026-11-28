@@ -14,6 +14,9 @@ PopupMenu {
     // the songs' positions in it.
     property string playlistId: ""
     property var rows: []
+    // Set on the graph page: "Show related graph" adds the song's neighbours to the graph
+    // on screen (called with the track) instead of opening a new one.
+    property var showGraph: null
 
     readonly property var ids: tracks.map(t => t.id)
 
@@ -75,12 +78,32 @@ PopupMenu {
         // The song's composition, work and their other songs, or the songs that sound alike.
         visible: Session.serverFeatures.indexOf("graph") >= 0 && root.picked === 1
         text: "Show related graph"
-        onTriggered: Nav.go({ page: "graph", seed: "song:" + root.tracks[0].id, label: root.tracks[0].title,
-                              mode: "related" })
+        onTriggered: {
+            if (root.showGraph)
+                root.showGraph(root.tracks[0])
+            else
+                Nav.go({ page: "graph", seed: "song:" + root.tracks[0].id, label: root.tracks[0].title, mode: "related" })
+        }
     }
     PopupMenuItem {
         visible: root.showGoToAlbum && root.picked === 1 && !!root.tracks[0].albumId
         text: "Go to album"
         onTriggered: Nav.openAlbumId(root.tracks[0].albumId, root.tracks[0].album)
+    }
+    PopupMenuItem {
+        visible: root.picked === 1
+        text: "Copy title"
+        onTriggered: App.copyText(root.tracks[0].title)
+    }
+    PopupMenuItem {
+        visible: root.picked === 1 && !!root.tracks[0].album
+        text: "Copy album title"
+        onTriggered: App.copyText(root.tracks[0].album)
+    }
+    PopupMenuItem {
+        // Everything known about the song: credits, file, and on an eos server its tags.
+        visible: root.picked === 1
+        text: "Show details"
+        onTriggered: Nav.openSong(root.tracks[0].id, root.tracks[0].title)
     }
 }

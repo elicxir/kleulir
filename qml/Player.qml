@@ -41,6 +41,7 @@ QtObject {
         return {
             uid: nextUid++,
             trackId: track.id, title: track.title, artist: track.artist,
+            artistId: track.artistId || "", artistName: track.artistName || track.artist || "",
             duration: track.duration,
             album: track.album || (album ? album.title : "") || "",
             albumId: track.albumId || (album ? album.id : "") || "",
@@ -52,6 +53,7 @@ QtObject {
     function copyOf(e) {
         return {
             uid: e.uid, trackId: e.trackId, title: e.title, artist: e.artist,
+            artistId: e.artistId || "", artistName: e.artistName || e.artist || "",
             duration: e.duration, album: e.album, albumId: e.albumId,
             coverArt: e.coverArt, gain: e.gain
         }
