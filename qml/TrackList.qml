@@ -129,7 +129,11 @@ ListView {
 
     section.property: groupByWork ? "work" : ""
     section.delegate: Item {
-        required property string section
+        // `section` comes from the context, not through a required property: this
+        // file's root is the ListView, which has a `section` of its own, and Qt then
+        // fails to update a required one when it reuses a heading that scrolled out
+        // of view (Disc 3 came up headed "Disc 1").
+        readonly property string name: section
         width: list.width - list.sideMargin
         height: 44
         Text {
@@ -137,8 +141,8 @@ ListView {
             anchors.leftMargin: Theme.gap
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
-            text: parent.section.length > 0 ? parent.section : "No work"
-            color: parent.section.length > 0 ? Theme.text : Theme.textFaint
+            text: parent.name.length > 0 ? parent.name : "No work"
+            color: parent.name.length > 0 ? Theme.text : Theme.textFaint
             font.pixelSize: Theme.fontSmall
             font.weight: Font.DemiBold
             font.letterSpacing: 0.4
