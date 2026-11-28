@@ -771,7 +771,9 @@ void Library::loadVersions(const QString& songId) {
         map["compositionName"] = qs(v.composition->name);
         map["composers"] = names(v.composition->composers);
       }
-      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("Same arrangement")));
+      // The song asked about leads its own group, so the page lists every variation.
+      songs.append(trackMap(v.song, QStringLiteral("This arrangement")));
+      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("This arrangement")));
       for (const ArrangementSongs& group : v.arrangements)
         for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
       for (const RelatedItem& item : v.related) {
@@ -883,9 +885,9 @@ void Library::loadGraph(const QString& seed, const QString& mode) {
       q.depth = 2;
       q.include = {"composition", "relation", "title"};
       q.limit = 120;
-      // "sure": only the estimates MusicBrainz backs directly (a recording of the work, an
-      // arrangement of it, a part of it); name and audio matches are left out.
-      if (mode == "sure") q.rules = std::vector<std::string>{"musicbrainz_work", "musicbrainz_arrangement", "musicbrainz_parts"};
+      // "sure": tags, people, and what an outside database (MusicBrainz) states; name and
+      // audio matches are left out.
+      if (mode == "sure") q.origins = std::vector<std::string>{"external", "tag", "manual"};
     }
     QVariantMap map;
     QVariantList nodes, edges, songs;
