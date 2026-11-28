@@ -2,7 +2,12 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <algorithm>
+#include <map>
+#include <set>
+#include <tuple>
 #include <QHash>
+#include <QSet>
 #include <QJSEngine>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -265,12 +270,27 @@ void Library::loadAlbum(const QString& id) {
         for (const TitleGroup& group : api->album_titles(id.toStdString()))
           if (group.title)
             for (const Song& s : group.songs) works[qs(s.id)].append(qs(group.title->name));
-        for (const Song& s : detail.album.songs) tracks.append(trackMap(s, works.value(qs(s.id)).join(" / ")));
+        // A virtual album is headed by work. A physical album is never cut into works:
+        // one of several discs is headed by disc alone ("Disc 1"), one of a single disc
+        // gets no headings.
+        QSet<int> discs;
+        for (const Song& s : detail.album.songs) discs.insert(s.disc_number.value_or(1));
+        const bool isVirtual = album.value("kind").toString() == QLatin1String("virtual");
+        const bool byDisc = discs.size() > 1 && !isVirtual;
+        for (const Song& s : detail.album.songs)
+          tracks.append(trackMap(s, byDisc     ? QStringLiteral("Disc %1").arg(s.disc_number.value_or(1))
+                                   : isVirtual ? works.value(qs(s.id)).join(" / ")
+                                               : QString()));
       } else {
         const auto full = api->album(id.toStdString());
         album = albumMap(full);
         for (const Song& s : full.songs) tracks.append(trackMap(s, {}));
       }
+      // One heading for the whole album (a single work, or none) would only repeat the
+      // album's name: the page shows headings when there are at least two.
+      QSet<QString> sections;
+      for (const QVariant& t : tracks) sections.insert(t.toMap().value("work").toString());
+      album["sections"] = sections.size() > 1;
       album["tracks"] = tracks;
       deliver(api, [this, id, album] {
         details_.insert(id, album);
@@ -645,6 +665,14 @@ QString arrangementLabel(const Arrangement& a) {
   return QStringLiteral("Arrangement");
 }
 
+// The badge on a song's row in the variations list: the arrangement's name, "Original"
+// for the one a composition has without anybody arranging it, and nothing for an
+// unnamed arrangement.
+QString arrangementBadge(const Arrangement& a) {
+  if (a.name && !a.name->empty()) return qs(*a.name);
+  return a.is_implicit ? QStringLiteral("Original") : QString();
+}
+
 QString relationLabel(const Relation& r) {
   const bool out = r.direction != "in";
   if (r.type == "medley") return out ? QStringLiteral("Contains") : QStringLiteral("Part of a medley");
@@ -776,24 +804,71 @@ void Library::loadVersions(const QString& songId) {
     QVariantList songs, compositions;
     try {
       const auto v = api->song_versions(songId.toStdString());
+      // Every song to list, with the badge on its row: its arrangement, or how a related
+      // song is related. The first time a song comes up wins.
+      struct Entry {
+        Song song;
+        QString badge, section;
+      };
+      std::vector<Entry> entries;
+      std::set<std::string> seen;
+      const auto add = [&](const Song& s, const QString& badge) {
+        if (seen.insert(s.id).second) entries.push_back({s, badge, QString()});
+      };
       if (v.composition) {
         map["compositionId"] = qs(v.composition->id);
         map["compositionName"] = qs(v.composition->name);
         map["composers"] = names(v.composition->composers);
+        // The composition lists every arrangement, the song's own included.
+        for (const ArrangementSongs& group : api->composition(v.composition->id).arrangements)
+          for (const Song& s : group.songs) add(s, arrangementBadge(group.arrangement));
       }
-      // The song asked about leads its own group, so the page lists every variation.
-      songs.append(trackMap(v.song, QStringLiteral("This arrangement")));
-      for (const Song& s : v.performances) songs.append(trackMap(s, QStringLiteral("This arrangement")));
-      for (const ArrangementSongs& group : v.arrangements)
-        for (const Song& s : group.songs) songs.append(trackMap(s, arrangementLabel(group.arrangement)));
+      add(v.song, QString());  // listed even when it has no composition
       for (const RelatedItem& item : v.related) {
         if (item.song) {
-          songs.append(trackMap(*item.song, relationLabel(item.relation)));
+          add(*item.song, relationLabel(item.relation));
         } else if (item.composition) {
           compositions.append(QVariantMap{{"id", qs(item.composition->id)},
                                           {"name", qs(item.composition->name)},
                                           {"relation", relationLabel(item.relation)}});
         }
+      }
+
+      // Sections are works (作品); a song in none falls under its album.
+      std::map<std::string, QString> workNames;
+      for (const Entry& e : entries)
+        for (const std::string& t : e.song.title_ids)
+          if (!workNames.count(t)) {
+            try {
+              workNames[t] = qs(api->title(t).title.name);
+            } catch (const Error& err) {
+              if (err.offline()) throw;
+              workNames[t] = QString();
+            }
+          }
+      const auto sectionOf = [&](const Song& s) {
+        for (const std::string& t : s.title_ids)
+          if (const auto it = workNames.find(t); it != workNames.end() && !it->second.isEmpty()) return it->second;
+        return qs(s.album);
+      };
+      std::map<QString, int> earliest;  // section -> its earliest year
+      for (Entry& e : entries) {
+        e.section = sectionOf(e.song);
+        const int year = e.song.year.value_or(9999);
+        if (const auto [it, fresh] = earliest.emplace(e.section, year); !fresh) it->second = std::min(it->second, year);
+      }
+      // The song's own work first, the rest by release; the song leads its section.
+      const QString own = sectionOf(v.song);
+      const auto key = [&](const Entry& e) {
+        return std::make_tuple(e.section != own, earliest[e.section], e.section, e.song.id != v.song.id,
+                               e.song.year.value_or(9999), qs(e.song.album), e.song.disc_number.value_or(0),
+                               e.song.track.value_or(0));
+      };
+      std::stable_sort(entries.begin(), entries.end(), [&](const Entry& a, const Entry& b) { return key(a) < key(b); });
+      for (const Entry& e : entries) {
+        QVariantMap track = trackMap(e.song, e.section);
+        track["badge"] = e.badge;
+        songs.append(track);
       }
     } catch (const std::exception& e) {
       report(e);

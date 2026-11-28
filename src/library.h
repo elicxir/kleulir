@@ -93,9 +93,11 @@ class Library : public QObject {
   // Answers with compositionLoaded: id, name, composers and songs, each song's
   // `work` naming its arrangement (the list's section).
   Q_INVOKABLE void loadComposition(const QString& id);
-  // The other recordings of what `songId` is. Answers with versionsLoaded:
-  // compositionId, compositionName, composers, songs (sectioned like above) and
-  // compositions (related ones: id, name, relation).
+  // Every recording of what `songId` is, that song first. Answers with versionsLoaded:
+  // compositionId, compositionName, composers, songs and compositions (related ones:
+  // id, name, relation). Each song's `work` is its work (its album when it has none),
+  // the song's own first and the rest by release; `badge` names its arrangement
+  // ("Original", "Piano Ver.") or, for a related song, the relation.
   Q_INVOKABLE void loadVersions(const QString& songId);
   // Everything known about one song, on any server; an eos server adds the composition,
   // works, file and tags. Answers with songLoaded: id, title, artist, album, albumId,

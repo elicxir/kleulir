@@ -310,6 +310,10 @@ ApplicationWindow {
         const demoDetails = Qt.application.arguments.find(a => a.startsWith("--demo-song="))
         if (demoDetails)
             Nav.openSong(demoDetails.substring(12), "")
+        // `--demo-variations=<song id>`: open every variation of that song.
+        const demoSong = Qt.application.arguments.find(a => a.startsWith("--demo-variations="))
+        if (demoSong)
+            Nav.go({ page: "versions", song: { id: demoSong.substring(18), title: "" } })
         // `--demo-search=<text>`: open the search page with that text.
         const demoSearch = Qt.application.arguments.find(a => a.startsWith("--demo-search="))
         if (demoSearch)

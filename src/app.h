@@ -24,6 +24,9 @@ class App : public QObject {
   Q_PROPERTY(int wheelLines READ wheelLines WRITE setWheelLines NOTIFY changed)
   Q_PROPERTY(int systemWheelLines READ systemWheelLines CONSTANT)
   // Closing the window hides it to the tray instead of quitting.
+  // Song lists: the most room the artist column takes, in pixels (the artist-and-album
+  // column of search results takes 1.75 times that). The title gets the rest.
+  Q_PROPERTY(int artistColumnWidth READ artistColumnWidth WRITE setArtistColumnWidth NOTIFY changed)
   Q_PROPERTY(bool closeToTray READ closeToTray WRITE setCloseToTray NOTIFY changed)
   // Start with the window hidden (only with closeToTray).
   // Start with Windows, hidden in the tray (an entry under the user's Run key that
@@ -54,6 +57,8 @@ class App : public QObject {
   int wheelLines() const;
   void setWheelLines(int lines);
   int systemWheelLines() const;
+  int artistColumnWidth() const;
+  void setArtistColumnWidth(int pixels);
   bool closeToTray() const;
   void setCloseToTray(bool on);
   bool startWithWindows() const;

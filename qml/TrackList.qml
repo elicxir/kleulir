@@ -15,7 +15,12 @@ ListView {
     property bool showAlbum: false     // show each song's album (search results)
     property string playlistId: ""     // set on a playlist's page
     property bool showVariations: true // mark songs that have other recordings (VAR)
+    property string markedId: ""       // the song a page is about, tagged in its row
     property real sideMargin: 12       // room kept for the scroll bar
+    // The artist column: as wide as the setting says, but never more than a share of
+    // the list, so that a narrow window leaves the room to the titles.
+    readonly property real artistWidth: showAlbum ? Math.min(App.artistColumnWidth * 1.75, width * 0.26)
+                                                  : Math.min(App.artistColumnWidth, width * 0.15)
 
     clip: true
     bottomMargin: Theme.pad
@@ -29,7 +34,7 @@ ListView {
         rows.clear()
         tracks.forEach(t => rows.append({
             trackId: t.id, title: t.title, artist: t.artist, albumTitle: t.album || "",
-            duration: t.duration, work: t.work || "", variations: t.variations || 0
+            duration: t.duration, work: t.work || "", variations: t.variations || 0, badge: t.badge || ""
         }))
     }
 
@@ -167,6 +172,7 @@ ListView {
         required property string albumTitle
         required property real duration
         required property int variations
+        required property string badge    // e.g. the arrangement, on the variations list
         readonly property var track: index < list.tracks.length ? list.tracks[index] : null
         readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
         readonly property bool isSelected: list.isSelected(index)
@@ -233,6 +239,19 @@ ListView {
                 font.pixelSize: 14
                 elide: Text.ElideRight
             }
+            Rectangle {
+                visible: row.badge.length > 0
+                implicitWidth: badgeLabel.implicitWidth + 12
+                implicitHeight: 18
+                color: Theme.raised
+                Text {
+                    id: badgeLabel
+                    anchors.centerIn: parent
+                    text: row.badge
+                    color: Theme.textDim
+                    font.pixelSize: 10
+                }
+            }
             // The song has other recordings (arrangements, performances); a click lists them.
             Rectangle {
                 visible: list.showVariations && row.variations > 0
@@ -259,17 +278,32 @@ ListView {
                     ToolTip.text: row.variations === 1 ? "1 other variation" : row.variations + " other variations"
                 }
             }
+            Rectangle {
+                visible: list.markedId.length > 0 && row.trackId === list.markedId
+                implicitWidth: markedLabel.implicitWidth + 12
+                implicitHeight: 18
+                color: "transparent"
+                border.color: Qt.rgba(1, 1, 1, 0.25)
+                Text {
+                    id: markedLabel
+                    anchors.centerIn: parent
+                    text: "THIS SONG"
+                    color: Theme.textDim
+                    font.pixelSize: 10
+                    font.weight: Font.DemiBold
+                }
+            }
             // Artist, and on lists across albums the album: each opens its page on a click.
             RowLayout {
                 id: byline
-                Layout.preferredWidth: list.showAlbum ? 300 : 170
-                Layout.maximumWidth: list.showAlbum ? 300 : 170
+                Layout.preferredWidth: list.artistWidth
+                Layout.maximumWidth: list.artistWidth
                 spacing: 0
                 readonly property bool withAlbum: list.showAlbum && row.albumTitle.length > 0
-                readonly property bool artistLink: row.track !== null && !!row.track.artistId
-                readonly property bool albumLink: row.track !== null && !!row.track.albumId
+                readonly property bool artistLink: !!row.track && !!row.track.artistId
+                readonly property bool albumLink: !!row.track && !!row.track.albumId
                 Text {
-                    Layout.maximumWidth: byline.withAlbum ? 135 : 170
+                    Layout.maximumWidth: byline.withAlbum ? list.artistWidth * 0.45 : list.artistWidth
                     text: row.artist
                     color: artistArea.containsMouse ? Theme.text : Theme.textDim
                     font.pixelSize: Theme.fontBody

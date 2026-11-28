@@ -3,10 +3,11 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Kleulir
 
-// The recordings of one piece of music, grouped by arrangement.
-// Opened in one of two ways:
-//   composition: { id, name }  every recording of it
-//   song: a track              the other versions of that song, and what is related
+// The recordings of one piece of music. Opened in one of two ways:
+//   composition: { id, name }  every recording of it, grouped by arrangement
+//   song: a track              every variation of that song, itself included, and what is
+//                              related: grouped by work (or album), each row naming its
+//                              arrangement, the song's own row marked
 Item {
     id: root
     property var composition: null
@@ -60,10 +61,15 @@ Item {
         showAlbum: true
         groupByWork: true
         showVariations: false   // every song here is a variation
+        markedId: root.song ? root.song.id : ""
+        // The heading stays put; the songs scroll beneath it.
+        headerPositioning: ListView.OverlayHeader
 
-        header: Item {
+        header: Rectangle {
             width: list.width - list.sideMargin
             height: headerLayout.implicitHeight + 28
+            z: 3  // above the rows and the section headings
+            color: Theme.panel
 
             ColumnLayout {
                 id: headerLayout
@@ -74,7 +80,7 @@ Item {
                 ColumnLayout {
                     spacing: 4
                     Text {
-                        text: root.song ? "OTHER VERSIONS OF" : "COMPOSITION"
+                        text: root.song ? "ALL VARIATIONS OF" : "COMPOSITION"
                         color: Theme.textDim
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
@@ -95,7 +101,7 @@ Item {
                             const parts = []
                             if (root.composers.length > 0)
                                 parts.push("Composed by " + root.composers)
-                            parts.push(root.songs.length + (root.song ? " other recordings" : " recordings"))
+                            parts.push(root.songs.length + (root.songs.length === 1 ? " recording" : " recordings"))
                             return parts.join(" · ")
                         }
                         color: Theme.textDim
@@ -145,11 +151,11 @@ Item {
                 }
 
                 Text {
-                    visible: root.loaded && root.songs.length === 0
+                    visible: root.loaded && root.songs.length <= (root.song ? 1 : 0)
                     Layout.topMargin: 24
                     text: root.song && root.compositionId.length === 0
-                          ? "This song is not linked to a composition yet, so no other versions are known."
-                          : root.song ? "No other versions of this song in the library."
+                          ? "This song is not linked to a composition yet, so no other variations are known."
+                          : root.song ? "No other variations of this song in the library."
                                       : "No recordings."
                     color: Theme.textFaint
                     font.pixelSize: 14

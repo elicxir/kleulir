@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include <algorithm>
 #include <QCoreApplication>
 #include <QFont>
 #include <QFontDatabase>
@@ -152,6 +153,17 @@ void App::setWheelLines(int lines) {
 }
 
 int App::systemWheelLines() const { return systemWheel; }
+
+int App::artistColumnWidth() const {
+  return std::clamp(settings().value("lists/artistColumnWidth", 170).toInt(), 80, 400);
+}
+
+void App::setArtistColumnWidth(int pixels) {
+  pixels = std::clamp(pixels, 80, 400);
+  if (pixels == artistColumnWidth()) return;
+  settings().setValue("lists/artistColumnWidth", pixels);
+  emit changed();
+}
 
 bool App::closeToTray() const { return settings().value("tray/closeToTray", false).toBool(); }
 
