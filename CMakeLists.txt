@@ -11,8 +11,10 @@ set(CMAKE_INSTALL_BINDIR ".")
 find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Network)
 qt_standard_project_setup(REQUIRES 6.8)
 
-# libeos: the UI-less client library shared with the other eos clients.
-add_subdirectory(external/eos/client/libeos)
+# libeos: the UI-less client library shared with the other eos clients. KLEULIR_EOS_DIR
+# points at another eos checkout, for changing the server and kleulir together.
+set(KLEULIR_EOS_DIR "${CMAKE_SOURCE_DIR}/external/eos" CACHE PATH "The eos checkout libeos is built from")
+add_subdirectory("${KLEULIR_EOS_DIR}/client/libeos" libeos)
 
 qt_add_executable(kleulir WIN32
   src/main.cpp
@@ -82,6 +84,7 @@ qt_add_qml_module(kleulir
     qml/CompositionsPage.qml
     qml/CompositionPage.qml
     qml/GraphPage.qml
+    qml/SongPage.qml
 )
 
 target_include_directories(kleulir PRIVATE src)

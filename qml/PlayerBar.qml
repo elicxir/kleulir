@@ -48,7 +48,18 @@ Rectangle {
                     wrapMode: Player.current ? Text.NoWrap : Text.Wrap
                     maximumLineCount: 2
                     font.pixelSize: 14
+                    font.underline: titleHover.hovered && Player.current !== null
                     elide: Text.ElideRight
+                    // Click: the playing track's details.
+                    HoverHandler {
+                        id: titleHover
+                        enabled: Player.current !== null
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                    TapHandler {
+                        enabled: Player.current !== null
+                        onTapped: Nav.openSong(Player.current.trackId, Player.current.title)
+                    }
                 }
                 Text {
                     Layout.fillWidth: true

@@ -96,6 +96,12 @@ class Library : public QObject {
   // compositionId, compositionName, composers, songs (sectioned like above) and
   // compositions (related ones: id, name, relation).
   Q_INVOKABLE void loadVersions(const QString& songId);
+  // Everything known about one song, on any server; an eos server adds the composition,
+  // works, file and tags. Answers with songLoaded: id, title, artist, album, albumId,
+  // coverArt, duration, track (as in the lists, for playing it), and sections, each
+  // { title, rows }. A row is { label, items, note, estimated }; an item is { text } and
+  // may carry `nav` (a Nav entry to open) or `url`. On failure: error.
+  Q_INVOKABLE void loadSong(const QString& id);
   // Answers with foldersLoaded: every folder, flat: id, name, parentId,
   // albumCount, childCount.
   Q_INVOKABLE void loadFolders();
@@ -132,6 +138,7 @@ class Library : public QObject {
   void compositionsLoaded(const QVariantList& compositions);
   void compositionLoaded(const QString& id, const QVariantMap& composition);
   void versionsLoaded(const QString& songId, const QVariantMap& versions);
+  void songLoaded(const QString& id, const QVariantMap& song);
   void foldersLoaded(const QVariantList& folders);
   void folderLoaded(const QString& id, const QVariantMap& folder);
   void graphLoaded(const QString& seed, const QString& mode, const QVariantMap& graph);

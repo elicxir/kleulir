@@ -90,4 +90,10 @@ PopupMenu {
         text: "Go to album"
         onTriggered: Nav.openAlbumId(root.tracks[0].albumId, root.tracks[0].album)
     }
+    PopupMenuItem {
+        // Everything known about the song: credits, file, and on an eos server its tags.
+        visible: root.picked === 1
+        text: "Show details"
+        onTriggered: Nav.openSong(root.tracks[0].id, root.tracks[0].title)
+    }
 }

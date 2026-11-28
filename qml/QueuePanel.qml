@@ -89,6 +89,10 @@ Rectangle {
                 text: "Go to album"
                 onTriggered: Nav.openAlbumId(menu.entry.albumId, menu.entry.album)
             }
+            PopupMenuItem {
+                text: "Show details"
+                onTriggered: Nav.openSong(menu.entry.trackId, menu.entry.title)
+            }
         }
 
         ListView {
