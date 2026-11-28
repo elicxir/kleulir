@@ -140,6 +140,28 @@ Flickable {
                 Layout.topMargin: 6
 
                 Text {
+                    text: "Artist column"
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
+                Segmented {
+                    options: [{ key: "110", label: "Narrow" }, { key: "170", label: "Normal" },
+                              { key: "240", label: "Wide" }, { key: "320", label: "Wider" }]
+                    current: String(App.artistColumnWidth)
+                    onPicked: key => App.artistColumnWidth = Number(key)
+                }
+                Text {
+                    text: "In song lists; the title takes the rest. Narrow windows give it less."
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.fontSmall
+                }
+            }
+
+            RowLayout {
+                spacing: Theme.gap
+                Layout.topMargin: 6
+
+                Text {
                     text: "Font"
                     color: Theme.textDim
                     font.pixelSize: Theme.fontBody
@@ -515,6 +537,33 @@ Flickable {
                     text: "Reset"
                     enabled: !Qt.colorEqual(Theme.accent, Theme.defaultAccent)
                     onClicked: Theme.setAccent(Theme.defaultAccent)
+                }
+            }
+        }
+
+        Divider {}
+
+        // ---- Library ---------------------------------------------------------
+        ColumnLayout {
+            spacing: 8
+
+            SectionTitle { text: "Library" }
+            Hint { text: "Albums, artists and playlists are read from the server when kleulir starts. Read them again after something changed there." }
+
+            RowLayout {
+                spacing: Theme.gap
+                Layout.topMargin: 4
+                OutlineButton {
+                    text: "Refresh"
+                    enabled: !Library.loading
+                    onClicked: Library.refreshAll()
+                }
+                Text {
+                    text: Library.loading ? "Reading…"
+                          : Library.error.length > 0 ? Library.error
+                          : Library.albums.length + " albums"
+                    color: Library.error.length > 0 ? Theme.estimated : Theme.textFaint
+                    font.pixelSize: Theme.fontSmall
                 }
             }
         }

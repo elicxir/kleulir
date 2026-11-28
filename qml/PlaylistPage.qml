@@ -43,7 +43,12 @@ Item {
         showAlbum: true
         playlistId: root.playlist ? root.playlist.id : ""
 
-        header: Item {
+        // The heading stays put; the songs scroll beneath it.
+        headerPositioning: ListView.OverlayHeader
+
+        header: Rectangle {
+            z: 3  // above the rows and the section headings
+            color: Theme.panel
             width: list.width - list.sideMargin
             height: headerLayout.implicitHeight + 36
 

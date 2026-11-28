@@ -4,8 +4,9 @@ import QtQuick.Layouts
 import Kleulir
 
 // Album detail, in the album's track order. In a virtual album a run of tracks from one
-// work (作品) gets a heading, and tracks without a work fall under an untitled one; a
-// physical album is listed without headings.
+// work (作品) gets a heading, and tracks without a work fall under an untitled one. A
+// physical album is never cut into works: one of several discs is headed by disc
+// ("Disc 1"), one of a single disc is a plain list.
 Item {
     id: root
     // Starts as the summary from the list (no tracks) and is replaced by the
@@ -43,16 +44,6 @@ Item {
         }
     }
 
-    // Wash of the cover's colour behind the header, fading into the panel.
-    Rectangle {
-        width: parent.width
-        height: 300
-        gradient: Gradient {
-            GradientStop { position: 0; color: Qt.hsla(root.hue, 0.30, 0.30, 0.55) }
-            GradientStop { position: 1; color: Qt.hsla(root.hue, 0.30, 0.30, 0) }
-        }
-    }
-
     TrackList {
         id: list
         anchors.fill: parent
@@ -60,11 +51,33 @@ Item {
         anchors.rightMargin: 12
         tracks: root.tracks
         album: root.album
-        // Only a virtual album is cut into works; a physical one stays one plain list.
-        groupByWork: !!root.album && root.album.kind === "virtual"
+        // Library.loadAlbum decides the headings (works, discs, or none).
+        groupByWork: !!root.album && !!root.album.sections
 
-        header: Column {
+        // The heading stays put; the songs scroll beneath it.
+        headerPositioning: ListView.OverlayHeader
+
+        header: Rectangle {
             width: list.width - list.sideMargin
+            height: headerColumn.height
+            z: 3  // above the rows and the section headings
+            color: Theme.panel
+            clip: true
+
+            // Wash of the cover's colour, fading into the panel.
+            Rectangle {
+                x: -24
+                width: parent.width + 48
+                height: parent.height
+                gradient: Gradient {
+                    GradientStop { position: 0; color: Qt.hsla(root.hue, 0.30, 0.30, 0.55) }
+                    GradientStop { position: 1; color: Qt.hsla(root.hue, 0.30, 0.30, 0) }
+                }
+            }
+
+            Column {
+            id: headerColumn
+            width: parent.width
             topPadding: 28
             bottomPadding: 12
 
@@ -178,6 +191,7 @@ Item {
                         }
                     }
                 }
+            }
             }
         }
     }
