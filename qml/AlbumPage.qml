@@ -3,8 +3,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Kleulir
 
-// Album detail. Tracks are grouped by work (作品), as /ext/albums/{id}/titles
-// returns them; tracks without a work fall under an untitled group.
+// Album detail, in the album's track order. A run of tracks from one work (作品) gets
+// a heading; tracks without a work fall under an untitled one.
 Item {
     id: root
     // Starts as the summary from the list (no tracks) and is replaced by the

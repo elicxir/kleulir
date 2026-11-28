@@ -1,6 +1,7 @@
 #include "library.h"
 
 #include <QCoreApplication>
+#include <QHash>
 #include <QJSEngine>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -251,11 +252,13 @@ void Library::loadAlbum(const QString& id) {
       if (eos) {
         const auto detail = api->ext_album(id.toStdString());
         album = albumMap(detail.album);
-        // Grouped by the work each song belongs to; a song in two works shows in both.
-        for (const TitleGroup& group : api->album_titles(id.toStdString())) {
-          const QString work = group.title ? qs(group.title->name) : QString();
-          for (const Song& s : group.songs) tracks.append(trackMap(s, work));
-        }
+        // In the album's own order; each song is labelled with its works, so the page can
+        // head runs of songs from one work without moving any song.
+        QHash<QString, QStringList> works;
+        for (const TitleGroup& group : api->album_titles(id.toStdString()))
+          if (group.title)
+            for (const Song& s : group.songs) works[qs(s.id)].append(qs(group.title->name));
+        for (const Song& s : detail.album.songs) tracks.append(trackMap(s, works.value(qs(s.id)).join(" / ")));
       } else {
         const auto full = api->album(id.toStdString());
         album = albumMap(full);
@@ -880,6 +883,9 @@ void Library::loadGraph(const QString& seed, const QString& mode) {
       q.depth = 2;
       q.include = {"composition", "relation", "title"};
       q.limit = 120;
+      // "sure": only the estimates MusicBrainz backs directly (a recording of the work, an
+      // arrangement of it, a part of it); name and audio matches are left out.
+      if (mode == "sure") q.rules = std::vector<std::string>{"musicbrainz_work", "musicbrainz_arrangement", "musicbrainz_parts"};
     }
     QVariantMap map;
     QVariantList nodes, edges, songs;
