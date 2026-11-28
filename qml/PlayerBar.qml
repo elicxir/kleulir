@@ -61,21 +61,51 @@ Rectangle {
                         onTapped: Nav.openSong(Player.current.trackId, Player.current.title)
                     }
                 }
-                Text {
+                RowLayout {
+                    id: byline
                     Layout.fillWidth: true
                     visible: Player.current !== null
-                    text: Player.current ? Player.current.artist + " · " + Player.current.album : ""
-                    color: albumHover.hovered ? Theme.text : Theme.textDim
-                    font.pixelSize: Theme.fontSmall
-                    font.underline: albumHover.hovered
-                    elide: Text.ElideRight
-                    // Click: the playing track's album.
-                    HoverHandler {
-                        id: albumHover
-                        cursorShape: Qt.PointingHandCursor
+                    spacing: 0
+                    readonly property bool artistLink: Player.current !== null && !!Player.current.artistId
+                    Text {
+                        Layout.maximumWidth: 200
+                        text: Player.current ? Player.current.artist : ""
+                        color: artistHover.hovered ? Theme.text : Theme.textDim
+                        font.pixelSize: Theme.fontSmall
+                        font.underline: artistHover.hovered
+                        elide: Text.ElideRight
+                        // Click: the playing track's artist.
+                        HoverHandler {
+                            id: artistHover
+                            enabled: byline.artistLink
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            enabled: byline.artistLink
+                            onTapped: Nav.openArtist(Player.current.artistId, Player.current.artistName)
+                        }
                     }
-                    TapHandler {
-                        onTapped: Nav.openAlbumId(Player.current.albumId, Player.current.album)
+                    Text {
+                        visible: Player.current !== null && Player.current.album.length > 0
+                        text: " · "
+                        color: Theme.textDim
+                        font.pixelSize: Theme.fontSmall
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: Player.current ? Player.current.album : ""
+                        color: albumHover.hovered ? Theme.text : Theme.textDim
+                        font.pixelSize: Theme.fontSmall
+                        font.underline: albumHover.hovered
+                        elide: Text.ElideRight
+                        // Click: the playing track's album.
+                        HoverHandler {
+                            id: albumHover
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            onTapped: Nav.openAlbumId(Player.current.albumId, Player.current.album)
+                        }
                     }
                 }
             }

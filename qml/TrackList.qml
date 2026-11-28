@@ -171,6 +171,7 @@ ListView {
         readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
         readonly property bool isSelected: list.isSelected(index)
         readonly property bool hot: rowArea.containsMouse || starButton.hovered || moreButton.hovered || variationsArea.containsMouse
+                                    || artistArea.containsMouse || albumArea.containsMouse
         readonly property bool starred: {
             Library.starRevision
             return Library.isStarred(trackId)
@@ -258,12 +259,55 @@ ListView {
                     ToolTip.text: row.variations === 1 ? "1 other variation" : row.variations + " other variations"
                 }
             }
-            Text {
+            // Artist, and on lists across albums the album: each opens its page on a click.
+            RowLayout {
+                id: byline
                 Layout.preferredWidth: list.showAlbum ? 300 : 170
-                text: list.showAlbum && row.albumTitle.length > 0 ? row.artist + " · " + row.albumTitle : row.artist
-                color: Theme.textDim
-                font.pixelSize: Theme.fontBody
-                elide: Text.ElideRight
+                Layout.maximumWidth: list.showAlbum ? 300 : 170
+                spacing: 0
+                readonly property bool withAlbum: list.showAlbum && row.albumTitle.length > 0
+                readonly property bool artistLink: row.track !== null && !!row.track.artistId
+                readonly property bool albumLink: row.track !== null && !!row.track.albumId
+                Text {
+                    Layout.maximumWidth: byline.withAlbum ? 135 : 170
+                    text: row.artist
+                    color: artistArea.containsMouse ? Theme.text : Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                    font.underline: artistArea.containsMouse
+                    elide: Text.ElideRight
+                    MouseArea {
+                        id: artistArea
+                        anchors.fill: parent
+                        enabled: byline.artistLink
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Nav.openArtist(row.track.artistId, row.track.artistName)
+                    }
+                }
+                Text {
+                    visible: byline.withAlbum
+                    text: " · "
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
+                Text {
+                    visible: byline.withAlbum
+                    Layout.fillWidth: true
+                    text: row.albumTitle
+                    color: albumArea.containsMouse ? Theme.text : Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                    font.underline: albumArea.containsMouse
+                    elide: Text.ElideRight
+                    MouseArea {
+                        id: albumArea
+                        anchors.fill: parent
+                        enabled: byline.albumLink
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Nav.openAlbumId(row.track.albumId, row.albumTitle)
+                    }
+                }
+                Item { Layout.fillWidth: true; visible: !byline.withAlbum }
             }
             IconButton {
                 id: starButton

@@ -41,6 +41,9 @@ QVariantMap trackMap(const Song& s, const QString& work) {
       {"id", qs(s.id)},
       {"title", qs(s.title)},
       {"artist", qs(s.display_artist.empty() ? s.artist : s.display_artist)},
+      // The first artist's page is where a click on the name goes.
+      {"artistId", qs(!s.artists.empty() && !s.artists[0].id.empty() ? s.artists[0].id : s.artist_id)},
+      {"artistName", qs(!s.artists.empty() && !s.artists[0].name.empty() ? s.artists[0].name : s.artist)},
       {"duration", s.duration},
       {"coverArt", qs(s.cover_art)},
       {"work", work},

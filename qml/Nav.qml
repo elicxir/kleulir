@@ -75,6 +75,11 @@ QtObject {
         openAlbum(found || { id: id, title: title || "", artist: "", year: 0, kind: "physical", coverArt: "" })
     }
 
+    function openArtist(id, name) {
+        if (id)
+            go({ page: "artist", artist: { id: id, name: name || "" } })
+    }
+
     function openSong(id, title) {
         if (id)
             go({ page: "song", song: { id: id, title: title || "" } })

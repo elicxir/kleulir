@@ -60,14 +60,12 @@ Item {
                     font.weight: Font.DemiBold
                     font.letterSpacing: 0.6
                 }
-                Text {
+                CopyText {
                     visible: !root.renaming
                     Layout.fillWidth: true
                     text: root.playlist ? root.playlist.name : ""
-                    color: Theme.text
                     font.pixelSize: 32
                     font.weight: Font.Bold
-                    elide: Text.ElideRight
                 }
                 TextField {
                     id: nameField

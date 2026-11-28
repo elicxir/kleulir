@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QFont>
 #include <QFontDatabase>
+#include <QClipboard>
 #include <QGuiApplication>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -189,6 +190,8 @@ void App::setStartWithWindows(bool on) {
     key.remove(QStringLiteral("kleulir"));
   emit changed();
 }
+
+void App::copyText(const QString& text) const { QGuiApplication::clipboard()->setText(text); }
 
 void App::restart() {
   QProcess::startDetached(QCoreApplication::applicationFilePath(), {});

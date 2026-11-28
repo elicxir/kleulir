@@ -91,6 +91,16 @@ PopupMenu {
         onTriggered: Nav.openAlbumId(root.tracks[0].albumId, root.tracks[0].album)
     }
     PopupMenuItem {
+        visible: root.picked === 1
+        text: "Copy title"
+        onTriggered: App.copyText(root.tracks[0].title)
+    }
+    PopupMenuItem {
+        visible: root.picked === 1 && !!root.tracks[0].album
+        text: "Copy album title"
+        onTriggered: App.copyText(root.tracks[0].album)
+    }
+    PopupMenuItem {
         // Everything known about the song: credits, file, and on an eos server its tags.
         visible: root.picked === 1
         text: "Show details"

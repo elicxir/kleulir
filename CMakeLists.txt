@@ -85,6 +85,7 @@ qt_add_qml_module(kleulir
     qml/CompositionPage.qml
     qml/GraphPage.qml
     qml/SongPage.qml
+    qml/CopyText.qml
 )
 
 target_include_directories(kleulir PRIVATE src)

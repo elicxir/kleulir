@@ -43,6 +43,16 @@ Item {
         }
     }
 
+    // Right-click on a link: its name (or address) to the clipboard.
+    PopupMenu {
+        id: linkMenu
+        property string text: ""
+        PopupMenuItem {
+            text: "Copy"
+            onTriggered: App.copyText(linkMenu.text)
+        }
+    }
+
     Flickable {
         id: flick
         anchors.fill: parent
@@ -84,17 +94,14 @@ Item {
                         font.weight: Font.DemiBold
                         font.letterSpacing: 0.6
                     }
-                    Text {
+                    CopyText {
                         Layout.fillWidth: true
                         text: root.info.title || (root.song ? root.song.title : "")
-                        color: Theme.text
                         font.pixelSize: 32
                         font.weight: Font.Bold
-                        elide: Text.ElideRight
                     }
-                    Text {
+                    CopyText {
                         Layout.fillWidth: true
-                        elide: Text.ElideRight
                         text: {
                             if (!root.loaded)
                                 return "Loading…"
@@ -239,6 +246,13 @@ Item {
                                                             Nav.go(value.modelData.nav)
                                                         else
                                                             Qt.openUrlExternally(value.modelData.url)
+                                                    }
+                                                }
+                                                TapHandler {
+                                                    acceptedButtons: Qt.RightButton
+                                                    onTapped: {
+                                                        linkMenu.text = value.modelData.url || value.modelData.text
+                                                        linkMenu.popup()
                                                     }
                                                 }
                                             }

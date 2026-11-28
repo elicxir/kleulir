@@ -60,6 +60,8 @@ class App : public QObject {
   void setStartWithWindows(bool on);
 
   Q_INVOKABLE void restart();
+  // Puts `text` on the clipboard.
+  Q_INVOKABLE void copyText(const QString& text) const;
 
   // Small state files under %LOCALAPPDATA% (the play queue). `name` is a plain
   // word; the text is whatever the caller wants back.
