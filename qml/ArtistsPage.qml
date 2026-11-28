@@ -99,6 +99,16 @@ Item {
                                 font.pixelSize: 14
                                 font.weight: Font.DemiBold
                             }
+                            // Their picture, for the artists that have one.
+                            Image {
+                                anchors.fill: parent
+                                visible: (cell.modelData.coverArt || "").length > 0
+                                source: visible ? "image://cover/" + cell.modelData.coverArt : ""
+                                sourceSize: Qt.size(96, 96)
+                                fillMode: Image.PreserveAspectCrop
+                                verticalAlignment: Image.AlignTop
+                                asynchronous: true
+                            }
                         }
                         Text {
                             Layout.fillWidth: true
