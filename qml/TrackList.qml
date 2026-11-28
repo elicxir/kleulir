@@ -14,6 +14,7 @@ ListView {
     property bool groupByWork: false   // section headers per work (album pages)
     property bool showAlbum: false     // show each song's album (search results)
     property string playlistId: ""     // set on a playlist's page
+    property bool showVariations: true // mark songs that have other recordings (VAR)
     property real sideMargin: 12       // room kept for the scroll bar
 
     clip: true
@@ -28,7 +29,7 @@ ListView {
         rows.clear()
         tracks.forEach(t => rows.append({
             trackId: t.id, title: t.title, artist: t.artist, albumTitle: t.album || "",
-            duration: t.duration, work: t.work || "", estimated: !!t.estimated
+            duration: t.duration, work: t.work || "", variations: t.variations || 0
         }))
     }
 
@@ -165,11 +166,11 @@ ListView {
         required property string artist
         required property string albumTitle
         required property real duration
-        required property bool estimated
+        required property int variations
         readonly property var track: index < list.tracks.length ? list.tracks[index] : null
         readonly property bool isCurrent: Player.current !== null && Player.current.trackId === trackId
         readonly property bool isSelected: list.isSelected(index)
-        readonly property bool hot: rowArea.containsMouse || starButton.hovered || moreButton.hovered
+        readonly property bool hot: rowArea.containsMouse || starButton.hovered || moreButton.hovered || variationsArea.containsMouse
         readonly property bool starred: {
             Library.starRevision
             return Library.isStarred(trackId)
@@ -231,19 +232,30 @@ ListView {
                 font.pixelSize: 14
                 elide: Text.ElideRight
             }
+            // The song has other recordings (arrangements, performances); a click lists them.
             Rectangle {
-                visible: row.estimated
-                implicitWidth: estimatedLabel.implicitWidth + 12
+                visible: list.showVariations && row.variations > 0
+                implicitWidth: variationsLabel.implicitWidth + 12
                 implicitHeight: 18
-                color: "transparent"
-                border.color: Qt.rgba(Theme.estimated.r, Theme.estimated.g, Theme.estimated.b, 0.6)
+                color: variationsArea.containsMouse ? Theme.hover : "transparent"
+                border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.6)
                 Text {
-                    id: estimatedLabel
+                    id: variationsLabel
                     anchors.centerIn: parent
-                    text: "EST"
-                    color: Theme.estimated
+                    text: "VAR"
+                    color: Theme.accent
                     font.pixelSize: 10
                     font.weight: Font.DemiBold
+                }
+                MouseArea {
+                    id: variationsArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Nav.go({ page: "versions", song: row.track })
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: row.variations === 1 ? "1 other variation" : row.variations + " other variations"
                 }
             }
             Text {

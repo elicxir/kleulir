@@ -59,6 +59,7 @@ Item {
         tracks: root.songs
         showAlbum: true
         groupByWork: true
+        showVariations: false   // every song here is a variation
 
         header: Item {
             width: list.width - list.sideMargin

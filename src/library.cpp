@@ -48,6 +48,8 @@ QVariantMap trackMap(const Song& s, const QString& work) {
       {"albumId", qs(s.album_id)},
       {"starred", s.starred.has_value()},
       {"estimated", provenance == "rule" || provenance == "llm"},
+      // Other recordings of the same composition (eos only).
+      {"variations", s.variation_count},
       // ReplayGain of the track in dB; 0 when the file has none.
       {"gain", s.replay_gain ? s.replay_gain->track_gain.value_or(0.0) : 0.0},
   };
