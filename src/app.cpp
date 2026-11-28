@@ -12,6 +12,7 @@
 #include <QProcess>
 #include <QSaveFile>
 #include <QStandardPaths>
+#include <QStyleHints>
 #include <QSettings>
 
 #include <cmath>
@@ -23,6 +24,8 @@ namespace {
 // What this run started with.
 double startedScale = 1.0;
 QString startedFont;
+// The wheel setting of Windows, read before kleulir puts its own in its place.
+int systemWheel = 3;
 
 // The QML-side App object, once the engine has created it.
 QPointer<App> appInstance;
@@ -37,6 +40,14 @@ double savedScale() {
 }
 
 QString savedFont() { return settings().value("appearance/font").toString(); }
+
+int savedWheelLines() {
+  const int lines = settings().value("input/wheelLines", 0).toInt();
+  return lines >= 1 && lines <= 30 ? lines : 0;
+}
+
+// Flickable reads this hint on every wheel event, so every list follows at once.
+void useWheelLines(int lines) { QGuiApplication::styleHints()->setWheelScrollLines(lines > 0 ? lines : systemWheel); }
 
 }  // namespace
 
@@ -123,6 +134,23 @@ QStringList App::fontFamilies() const {
 bool App::restartRequired() const {
   return std::abs(savedScale() - startedScale) > 0.001 || savedFont() != startedFont;
 }
+
+void App::applyWheel() {
+  systemWheel = QGuiApplication::styleHints()->wheelScrollLines();
+  if (savedWheelLines() > 0) useWheelLines(savedWheelLines());
+}
+
+int App::wheelLines() const { return savedWheelLines(); }
+
+void App::setWheelLines(int lines) {
+  if (lines < 1 || lines > 30) lines = 0;
+  if (lines == savedWheelLines()) return;
+  settings().setValue("input/wheelLines", lines);
+  useWheelLines(lines);
+  emit changed();
+}
+
+int App::systemWheelLines() const { return systemWheel; }
 
 bool App::closeToTray() const { return settings().value("tray/closeToTray", false).toBool(); }
 

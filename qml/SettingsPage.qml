@@ -212,6 +212,30 @@ Flickable {
                 }
             }
 
+            RowLayout {
+                spacing: Theme.gap
+                Layout.topMargin: 6
+
+                Text {
+                    text: "Mouse wheel"
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
+                Segmented {
+                    options: [{ key: "0", label: "Windows (" + App.systemWheelLines + ")" },
+                              { key: "1", label: "1" }, { key: "2", label: "2" }, { key: "3", label: "3" },
+                              { key: "5", label: "5" }, { key: "8", label: "8" }, { key: "12", label: "12" },
+                              { key: "20", label: "20" }]
+                    current: String(App.wheelLines)
+                    onPicked: key => App.wheelLines = Number(key)
+                }
+                Text {
+                    text: "Lines a list moves for each notch of the wheel."
+                    color: Theme.textFaint
+                    font.pixelSize: Theme.fontSmall
+                }
+            }
+
             // Scale and font are read when the app starts.
             RowLayout {
                 visible: App.restartRequired
