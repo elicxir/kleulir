@@ -436,6 +436,8 @@ void Library::refreshArtists() {
               {"name", qs(a.name)},
               {"albumCount", a.album_count},
               {"index", qs(group.name)},
+              // The artist's picture; empty for most (the server has one only when given).
+              {"coverArt", qs(a.cover_art)},
           });
         }
       }
@@ -462,7 +464,8 @@ void Library::loadArtist(const QString& id) {
       const auto artist = api->artist(id.toStdString());
       QVariantList albums;
       for (const Album& a : artist.albums) albums.append(albumMap(a));
-      const QVariantMap map{{"id", id}, {"name", qs(artist.name)}, {"albums", albums}};
+      const QVariantMap map{
+          {"id", id}, {"name", qs(artist.name)}, {"albums", albums}, {"coverArt", qs(artist.cover_art)}};
       deliver(api, [this, id, map, albums] {
         absorbStars(albums);
         emit artistLoaded(id, map);

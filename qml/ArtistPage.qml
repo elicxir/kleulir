@@ -9,6 +9,8 @@ Item {
     property var artist            // { id, name, albumCount } from the list
     property var albums: []
     property bool loaded: false
+    // Their picture: known at once when opened from the list, else once loaded.
+    property string art: artist && artist.coverArt ? artist.coverArt : ""
 
     function request() {
         if (artist)
@@ -23,6 +25,8 @@ Item {
             if (!root.artist || id !== root.artist.id)
                 return
             root.albums = data.albums || []
+            if (data.coverArt)
+                root.art = data.coverArt
             root.loaded = true
         }
     }
@@ -34,25 +38,41 @@ Item {
         anchors.rightMargin: 8
         spacing: 16
 
-        ColumnLayout {
-            spacing: 4
-            Text {
-                text: "ARTIST"
-                color: Theme.textDim
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-                font.letterSpacing: 0.6
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 20
+
+            Image {
+                visible: root.art.length > 0
+                Layout.preferredWidth: 120
+                Layout.preferredHeight: 120
+                source: visible ? "image://cover/" + root.art : ""
+                sourceSize: Qt.size(320, 320)
+                fillMode: Image.PreserveAspectCrop
+                verticalAlignment: Image.AlignTop
+                asynchronous: true
             }
-            CopyText {
+            ColumnLayout {
                 Layout.fillWidth: true
-                text: root.artist ? root.artist.name : ""
-                font.pixelSize: 32
-                font.weight: Font.Bold
-            }
-            Text {
-                text: root.loaded ? root.albums.length + " albums" : "Loading…"
-                color: Theme.textDim
-                font.pixelSize: Theme.fontBody
+                spacing: 4
+                Text {
+                    text: "ARTIST"
+                    color: Theme.textDim
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 0.6
+                }
+                CopyText {
+                    Layout.fillWidth: true
+                    text: root.artist ? root.artist.name : ""
+                    font.pixelSize: 32
+                    font.weight: Font.Bold
+                }
+                Text {
+                    text: root.loaded ? root.albums.length + " albums" : "Loading…"
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontBody
+                }
             }
         }
 
